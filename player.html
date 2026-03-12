@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Video Player</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0a0c12;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #title-bar {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: .5rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #title-bar h2 {
+      font-size: .9rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, #818cf8, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    #status-label {
+      font-size: .75rem;
+      color: #64748b;
+      background: #1e2233;
+      padding: .25rem .7rem;
+      border-radius: 99px;
+      border: 1px solid #2d3148;
+    }
+
+    #video-area {
+      flex: 1;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #preview-video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    #waiting-msg {
+      position: absolute;
+      text-align: center;
+      color: #64748b;
+    }
+    #waiting-msg .icon { font-size: 3rem; margin-bottom: .75rem; }
+    #waiting-msg p { font-size: .9rem; }
+
+    /* Controls */
+    .controls {
+      background: #111827;
+      border-top: 1px solid #1e2233;
+      padding: .7rem 1rem;
+      flex-shrink: 0;
+    }
+    .seek-row {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      margin-bottom: .5rem;
+    }
+    .time-label {
+      font-size: .72rem;
+      color: #64748b;
+      white-space: nowrap;
+      min-width: 40px;
+    }
+    .time-label.right { text-align: right; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 4px;
+      border-radius: 99px;
+      background: #2d3148;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #818cf8;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(129,140,248,.6);
+    }
+    input[type="range"].volume-slider {
+      height: 3px;
+      width: 80px;
+      flex: none;
+    }
+
+    .btn-row {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .ctrl-btn {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 1.1rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all .15s;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .ctrl-btn:hover { background: rgba(255,255,255,.08); color: #e2e8f0; }
+    .ctrl-btn.play-btn {
+      background: #818cf8;
+      color: #fff;
+      width: 42px;
+      height: 42px;
+      font-size: 1.3rem;
+    }
+    .ctrl-btn.play-btn:hover { background: #6366f1; }
+    .spacer { flex: 1; }
+    .volume-row { display: flex; align-items: center; gap: .4rem; }
+    .vol-icon { font-size: .9rem; color: #64748b; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <div id="title-bar">
+    <h2>🎬 Video Player</h2>
+    <span id="status-label">대기 중...</span>
+  </div>
+
+  <div id="video-area">
+    <div id="waiting-msg">
+      <div class="icon">🎞️</div>
+      <p>영상을 불러오는 중...</p>
+    </div>
+    <video id="preview-video" preload="metadata" style="display:none"></video>
+  </div>
+
+  <div class="controls">
+    <div class="seek-row">
+      <span class="time-label" id="time-current">0:00</span>
+      <input type="range" id="seek-bar" value="0" min="0" step="0.1" />
+      <span class="time-label right" id="time-duration">0:00</span>
+    </div>
+    <div class="btn-row">
+      <button class="ctrl-btn" id="btn-back" title="10초 뒤로">⏪</button>
+      <button class="ctrl-btn play-btn" id="btn-play">▶</button>
+      <button class="ctrl-btn" id="btn-fwd" title="10초 앞으로">⏩</button>
+      <div class="spacer"></div>
+      <div class="volume-row">
+        <span class="vol-icon" id="vol-icon">🔊</span>
+        <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="1" />
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video        = document.getElementById('preview-video');
+    const waitingMsg   = document.getElementById('waiting-msg');
+    const seekBar      = document.getElementById('seek-bar');
+    const btnPlay      = document.getElementById('btn-play');
+    const btnBack      = document.getElementById('btn-back');
+    const btnFwd       = document.getElementById('btn-fwd');
+    const timeCurrent  = document.getElementById('time-current');
+    const timeDuration = document.getElementById('time-duration');
+    const volumeSlider = document.getElementById('volume-slider');
+    const volIcon      = document.getElementById('vol-icon');
+    const statusLabel  = document.getElementById('status-label');
+
+    let jobId    = null;
+    let pollTimer = null;
+    let lastStatus = null;
+
+    // ── 부모 창에서 메시지 수신 ──
+    window.addEventListener('message', (e) => {
+      const { type, url, id } = e.data || {};
+
+      if (type === 'original' && url) {
+        loadVideo(url);
+        statusLabel.textContent = '원본 영상';
+      }
+
+      if (type === 'job' && id) {
+        jobId = id;
+        pollStatus();
+      }
+    });
+
+    function loadVideo(src) {
+      video.src = src;
+      video.load();
+      video.style.display = 'block';
+      waitingMsg.style.display = 'none';
+      btnPlay.textContent = '▶';
+    }
+
+    function pollStatus() {
+      if (!jobId) return;
+      pollTimer = setTimeout(async () => {
+        try {
+          const res  = await fetch(`/status/${jobId}`);
+          const data = await res.json();
+          handleStatus(data);
+          if (!['done', 'error'].includes(data.status)) pollStatus();
+        } catch { pollStatus(); }
+      }, 2000);
+    }
+
+    function handleStatus(data) {
+      if (data.status === lastStatus) return;
+      lastStatus = data.status;
+
+      const labels = {
+        queued:          '대기 중...',
+        transcribing:    '🎤 음성 인식 중...',
+        translating:     '🌍 번역 중...',
+        ready_to_encode: '✅ 번역 완료 — 자막 미리보기',
+        encoding:        '🎬 번인 인코딩 중...',
+        done:            '✅ 완료',
+        error:           '❌ 오류',
+      };
+      statusLabel.textContent = labels[data.status] || data.status;
+
+      if (data.status === 'ready_to_encode') {
+        // 번역된 자막 오버레이
+        const currentTime = video.currentTime;
+        // 기존 track 제거
+        [...video.querySelectorAll('track')].forEach(t => t.remove());
+        const track = document.createElement('track');
+        track.kind    = 'subtitles';
+        track.label   = 'English';
+        track.srclang = 'en';
+        track.src     = `/subtitle/${jobId}?t=${Date.now()}`;
+        track.default = true;
+        video.appendChild(track);
+        video.currentTime = currentTime;
+        video.textTracks[0] && (video.textTracks[0].mode = 'showing');
+      }
+
+      if (data.status === 'encoding') {
+        // 자막 트랙 숨기기
+        [...video.querySelectorAll('track')].forEach(t => t.remove());
+        if (video.textTracks[0]) video.textTracks[0].mode = 'hidden';
+      }
+
+      if (data.status === 'done') {
+        video.pause();
+        [...video.querySelectorAll('track')].forEach(t => t.remove());
+        loadVideo(`/download/${jobId}`);
+        statusLabel.textContent = '✅ 자막 번인 완료';
+      }
+    }
+
+    // ── 플레이어 컨트롤 ──
+    video.addEventListener('loadedmetadata', () => {
+      seekBar.max = video.duration;
+      timeDuration.textContent = formatTime(video.duration);
+    });
+
+    video.addEventListener('timeupdate', () => {
+      seekBar.value = video.currentTime;
+      timeCurrent.textContent = formatTime(video.currentTime);
+      const pct = (video.currentTime / video.duration) * 100 || 0;
+      seekBar.style.background = `linear-gradient(to right, #818cf8 ${pct}%, #2d3148 ${pct}%)`;
+    });
+
+    video.addEventListener('ended', () => { btnPlay.textContent = '▶'; });
+
+    seekBar.addEventListener('input', () => { video.currentTime = seekBar.value; });
+
+    btnPlay.addEventListener('click', () => {
+      if (video.paused) { video.play(); btnPlay.textContent = '⏸'; }
+      else              { video.pause(); btnPlay.textContent = '▶'; }
+    });
+
+    btnBack.addEventListener('click', () => { video.currentTime = Math.max(0, video.currentTime - 10); });
+    btnFwd.addEventListener('click',  () => { video.currentTime = Math.min(video.duration, video.currentTime + 10); });
+
+    volumeSlider.addEventListener('input', () => {
+      video.volume = volumeSlider.value;
+      volIcon.textContent = volumeSlider.value == 0 ? '🔇' : volumeSlider.value < 0.5 ? '🔉' : '🔊';
+    });
+    volIcon.addEventListener('click', () => {
+      video.muted = !video.muted;
+      volIcon.textContent = video.muted ? '🔇' : '🔊';
+    });
+
+    function formatTime(s) {
+      if (!s || isNaN(s)) return '0:00';
+      const m   = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return `${m}:${sec.toString().padStart(2, '0')}`;
+    }
+  </script>
+</body>
+</html>

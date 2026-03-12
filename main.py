@@ -2,7 +2,7 @@ import uuid, os, re, subprocess, shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 import aiofiles
 import requests
 import whisper
@@ -20,7 +20,7 @@ OUTPUTS.mkdir(exist_ok=True)
 # ── Globals ────────────────────────────────────────────────────────────────────
 jobs: dict[str, dict] = {}
 executor = ThreadPoolExecutor(max_workers=1)
-whisper_model = None   # loaded lazily on first job
+whisper_model = None
 
 app = FastAPI()
 
@@ -28,6 +28,10 @@ app = FastAPI()
 @app.get("/")
 async def index():
     return FileResponse(BASE / "index.html")
+
+@app.get("/player")
+async def player():
+    return FileResponse(BASE / "player.html")
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.post("/upload")
@@ -52,6 +56,27 @@ async def upload(file: UploadFile = File(...)):
 async def status(job_id: str):
     return jobs.get(job_id, {"status": "not_found"})
 
+# ── Subtitle preview (WebVTT) ──────────────────────────────────────────────────
+@app.get("/subtitle/{job_id}")
+async def subtitle(job_id: str):
+    srt_path = UPLOADS / f"{job_id}_en.srt"
+    if not srt_path.exists():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    content = srt_path.read_text(encoding="utf-8")
+    # SRT → WebVTT 변환 (콤마를 점으로)
+    vtt = "WEBVTT\n\n" + re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", content)
+    return Response(content=vtt, media_type="text/vtt")
+
+# ── Encode (번인 시작) ──────────────────────────────────────────────────────────
+@app.post("/encode/{job_id}")
+async def encode(job_id: str):
+    job = jobs.get(job_id, {})
+    if job.get("status") != "ready_to_encode":
+        return JSONResponse({"error": "Not ready"}, status_code=400)
+    jobs[job_id].update({"status": "encoding", "message": "🎬 자막 인코딩 중...", "progress": 82})
+    executor.submit(run_encode, job_id)
+    return {"ok": True}
+
 # ── Download ───────────────────────────────────────────────────────────────────
 @app.get("/download/{job_id}")
 async def download(job_id: str):
@@ -64,14 +89,13 @@ async def download(job_id: str):
         media_type="video/mp4",
     )
 
-# ── Pipeline ───────────────────────────────────────────────────────────────────
+# ── Pipeline: 음성인식 + 번역 ────────────────────────────────────────────────────
 def run_pipeline(job_id: str, input_path: str):
-    srt_path = UPLOADS / f"{job_id}.srt"
+    srt_path    = UPLOADS / f"{job_id}.srt"
     en_srt_path = UPLOADS / f"{job_id}_en.srt"
-    output_path = OUTPUTS / f"{job_id}.mp4"
 
     try:
-        # ── Step 1: Transcribe ─────────────────────────────────────────────────
+        # Step 1: Transcribe
         jobs[job_id].update({"status": "transcribing", "message": "🎤 음성 인식 중... (시간이 걸릴 수 있습니다)"})
 
         global whisper_model
@@ -84,15 +108,13 @@ def run_pipeline(job_id: str, input_path: str):
         srt_content = segments_to_srt(result["segments"])
         srt_path.write_text(srt_content, encoding="utf-8")
 
-        # ── Step 2: Translate ──────────────────────────────────────────────────
+        # Step 2: Translate
         jobs[job_id].update({"status": "translating", "message": f"🌍 영어로 번역 중... (감지된 언어: {detected_lang})"})
 
         blocks = parse_srt(srt_content)
-        total = len(blocks)
-
-        # 전체 블록을 한 번에 번역
+        total  = len(blocks)
         all_translated = translate_with_gemini(blocks)
-        jobs[job_id].update({"message": f"🌍 번역 완료 ({total}/{total})", "progress": 80})
+        jobs[job_id].update({"message": f"🌍 번역 완료 ({total}/{total})", "progress": 75})
 
         en_lines = []
         for b in blocks:
@@ -100,9 +122,33 @@ def run_pipeline(job_id: str, input_path: str):
             en_lines.append(f"{b['idx']}\n{b['timestamp']}\n{text}\n")
         en_srt_path.write_text("\n".join(en_lines), encoding="utf-8")
 
-        # ── Step 3: Burn subtitles ─────────────────────────────────────────────
-        jobs[job_id].update({"status": "encoding", "message": "🎬 자막 인코딩 중...", "progress": 82})
+        # 번역 완료 — 사용자 확인 대기
+        jobs[job_id].update({
+            "status": "ready_to_encode",
+            "message": "✅ 번역 완료! 자막을 확인한 후 번인을 시작하세요.",
+            "progress": 80,
+            "input_path": input_path,
+            "detected_lang": detected_lang,
+        })
 
+    except Exception as e:
+        jobs[job_id].update({"status": "error", "message": f"❌ 오류: {e}"})
+        for p in [Path(input_path), srt_path, en_srt_path]:
+            try: p.unlink(missing_ok=True)
+            except Exception: pass
+
+    finally:
+        try: srt_path.unlink(missing_ok=True)
+        except Exception: pass
+
+# ── Encode: 번인 ────────────────────────────────────────────────────────────────
+def run_encode(job_id: str):
+    job         = jobs[job_id]
+    input_path  = job["input_path"]
+    en_srt_path = UPLOADS / f"{job_id}_en.srt"
+    output_path = OUTPUTS / f"{job_id}.mp4"
+
+    try:
         srt_str = str(en_srt_path).replace("\\", "/").replace(":", "\\:")
         style = "FontName=Arial,FontSize=20,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Bold=1,Alignment=2"
 
@@ -124,18 +170,15 @@ def run_pipeline(job_id: str, input_path: str):
             "message": "✅ 완료!",
             "progress": 100,
             "output": str(output_path),
-            "detected_lang": detected_lang,
         })
 
     except Exception as e:
         jobs[job_id].update({"status": "error", "message": f"❌ 오류: {e}"})
 
     finally:
-        for p in [Path(input_path), srt_path, en_srt_path]:
-            try:
-                p.unlink(missing_ok=True)
-            except Exception:
-                pass
+        for p in [Path(input_path), en_srt_path]:
+            try: p.unlink(missing_ok=True)
+            except Exception: pass
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -151,14 +194,14 @@ def segments_to_srt(segments) -> str:
     lines = []
     for i, seg in enumerate(segments, 1):
         start = seconds_to_srt_time(seg["start"])
-        end = seconds_to_srt_time(seg["end"])
-        text = seg["text"].strip()
+        end   = seconds_to_srt_time(seg["end"])
+        text  = seg["text"].strip()
         lines.append(f"{i}\n{start} --> {end}\n{text}\n")
     return "\n".join(lines)
 
 
 def parse_srt(content: str) -> list[dict]:
-    blocks = []
+    blocks  = []
     pattern = r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3})\n([\s\S]*?)(?=\n\n\d+\n|\Z)"
     for idx, ts, text in re.findall(pattern, content.strip()):
         blocks.append({"idx": idx, "timestamp": ts, "text": text.strip()})
@@ -170,7 +213,7 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
-    texts = "\n---\n".join(f"[{b['idx']}] {b['text']}" for b in blocks)
+    texts  = "\n---\n".join(f"[{b['idx']}] {b['text']}" for b in blocks)
     prompt = (
         "Translate the following subtitle segments to English.\n"
         "Rules:\n"
@@ -193,7 +236,7 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
 
     result: dict[str, str] = {}
     for b in blocks:
-        m = re.search(rf"\[{b['idx']}\]\s*(.*?)(?=\n\[|\Z)", response, re.DOTALL)
+        m    = re.search(rf"\[{b['idx']}\]\s*(.*?)(?=\n\[|\Z)", response, re.DOTALL)
         text = m.group(1).strip() if m else b["text"]
         result[b["idx"]] = re.sub(r'\s*---\s*', '', text).strip()
     return result
