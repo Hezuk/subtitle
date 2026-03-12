@@ -144,6 +144,35 @@
     .spacer { flex: 1; }
     .volume-row { display: flex; align-items: center; gap: .4rem; }
     .vol-icon { font-size: .9rem; color: #64748b; cursor: pointer; }
+
+    /* Speed buttons */
+    .speed-row {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      margin-top: .5rem;
+    }
+    .speed-label {
+      font-size: .7rem;
+      color: #64748b;
+      margin-right: .2rem;
+      white-space: nowrap;
+    }
+    .speed-btn {
+      background: #1e2233;
+      border: 1px solid #2d3148;
+      color: #94a3b8;
+      font-size: .72rem;
+      font-weight: 600;
+      padding: .25rem .55rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all .15s;
+      margin: 0;
+      width: auto;
+    }
+    .speed-btn:hover { border-color: #818cf8; color: #818cf8; }
+    .speed-btn.active { background: #818cf8; border-color: #818cf8; color: #fff; }
   </style>
 </head>
 <body>
@@ -176,6 +205,14 @@
         <span class="vol-icon" id="vol-icon">🔊</span>
         <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="1" />
       </div>
+    </div>
+    <div class="speed-row">
+      <span class="speed-label">배속</span>
+      <button class="speed-btn" data-speed="0.5">0.5x</button>
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="1.5">1.5x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="3">3x</button>
     </div>
   </div>
 
@@ -308,6 +345,15 @@
     volIcon.addEventListener('click', () => {
       video.muted = !video.muted;
       volIcon.textContent = video.muted ? '🔇' : '🔊';
+    });
+
+    // ── 배속 조절 ──
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        video.playbackRate = parseFloat(btn.dataset.speed);
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
     });
 
     function formatTime(s) {

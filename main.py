@@ -221,7 +221,7 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
         "- Use natural, sophisticated English — avoid literal word-for-word translation\n"
         "- Maintain consistent tone, terminology, and style throughout all segments\n"
         "- Ensure each segment flows coherently with the surrounding context\n"
-        "- Keep translations concise to fit subtitle timing\n"
+        "- Keep each line under 42 characters — if a translation is longer, keep it short and concise\n"
         "- Return ONLY the translated segments with the same [number] markers\n\n"
         f"{texts}"
     )
@@ -238,5 +238,33 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
     for b in blocks:
         m    = re.search(rf"\[{b['idx']}\]\s*(.*?)(?=\n\[|\Z)", response, re.DOTALL)
         text = m.group(1).strip() if m else b["text"]
-        result[b["idx"]] = re.sub(r'\s*---\s*', '', text).strip()
+        text = re.sub(r'\s*---\s*', '', text).strip()
+        result[b["idx"]] = wrap_subtitle(text)
     return result
+
+
+def wrap_subtitle(text: str, max_chars: int = 42) -> str:
+    """한 줄이 max_chars를 초과하면 중간 공백에서 두 줄로 분할."""
+    # 이미 줄바꿈이 있으면 각 줄을 재처리
+    lines = text.splitlines()
+    wrapped = []
+    for line in lines:
+        line = line.strip()
+        if len(line) <= max_chars:
+            wrapped.append(line)
+        else:
+            # 중간 지점에서 가장 가까운 공백 찾기
+            mid = len(line) // 2
+            left  = line.rfind(' ', 0, mid + 1)
+            right = line.find(' ', mid)
+            if left == -1 and right == -1:
+                wrapped.append(line)  # 공백 없으면 그대로
+            elif left == -1:
+                split_at = right
+            elif right == -1:
+                split_at = left
+            else:
+                split_at = left if (mid - left) <= (right - mid) else right
+            wrapped.append(line[:split_at].strip())
+            wrapped.append(line[split_at:].strip())
+    return "\n".join(wrapped)
