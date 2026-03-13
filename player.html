@@ -145,6 +145,31 @@
     .volume-row { display: flex; align-items: center; gap: .4rem; }
     .vol-icon { font-size: .9rem; color: #64748b; cursor: pointer; }
 
+    /* Lang buttons */
+    .lang-row {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      margin-top: .4rem;
+    }
+    .lang-label { font-size: .7rem; color: #64748b; margin-right: .2rem; white-space: nowrap; }
+    .lang-btn {
+      background: #1e2233;
+      border: 1px solid #2d3148;
+      color: #94a3b8;
+      font-size: .72rem;
+      font-weight: 600;
+      padding: .25rem .6rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all .15s;
+      margin: 0;
+      width: auto;
+    }
+    .lang-btn:hover  { border-color: #38bdf8; color: #38bdf8; }
+    .lang-btn.active { background: #38bdf8; border-color: #38bdf8; color: #0f1117; }
+    #lang-row { display: none; }
+
     /* Speed buttons */
     .speed-row {
       display: flex;
@@ -179,6 +204,7 @@
 
   <div id="title-bar">
     <h2>🎬 Video Player</h2>
+    <button id="btn-edit" style="display:none; background:none; border:1px solid #2d3148; color:#94a3b8; font-size:.75rem; font-weight:600; padding:.3rem .7rem; border-radius:7px; cursor:pointer; transition:all .15s; width:auto; margin:0;">✏️ 자막 편집</button>
     <span id="status-label">대기 중...</span>
   </div>
 
@@ -206,6 +232,13 @@
         <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="1" />
       </div>
     </div>
+    <div class="lang-row" id="lang-row">
+      <span class="lang-label">자막</span>
+      <button class="lang-btn" data-lang="off">끄기</button>
+      <button class="lang-btn active" data-lang="en">영어</button>
+      <button class="lang-btn" data-lang="ko">한국어</button>
+      <button class="lang-btn" data-lang="both">동시</button>
+    </div>
     <div class="speed-row">
       <span class="speed-label">배속</span>
       <button class="speed-btn" data-speed="0.5">0.5x</button>
@@ -229,9 +262,20 @@
     const volIcon      = document.getElementById('vol-icon');
     const statusLabel  = document.getElementById('status-label');
 
-    let jobId    = null;
-    let pollTimer = null;
+    let jobId      = null;
+    let pollTimer  = null;
     let lastStatus = null;
+    let editorWin  = null;
+
+    const btnEdit = document.getElementById('btn-edit');
+    btnEdit.addEventListener('click', () => {
+      if (!jobId) return;
+      if (!editorWin || editorWin.closed) {
+        editorWin = window.open(`/editor?job_id=${jobId}`, 'subtitleEditor', 'width=720,height=800,resizable=yes');
+      } else { editorWin.focus(); }
+    });
+    btnEdit.addEventListener('mouseover', () => { btnEdit.style.borderColor='#818cf8'; btnEdit.style.color='#818cf8'; });
+    btnEdit.addEventListener('mouseout',  () => { btnEdit.style.borderColor='#2d3148'; btnEdit.style.color='#94a3b8'; });
 
     // ── 부모 창에서 메시지 수신 ──
     window.addEventListener('message', (e) => {
@@ -246,7 +290,16 @@
         jobId = id;
         pollStatus();
       }
+
+      // 편집 창에서 저장 후 자막 트랙 갱신
+      if (type === 'reload_subtitle' && jobId) {
+        reloadSubtitleTrack();
+      }
     });
+
+    function reloadSubtitleTrack() {
+      applyLang(currentLang);
+    }
 
     function loadVideo(src) {
       video.src = src;
@@ -283,26 +336,18 @@
       };
       statusLabel.textContent = labels[data.status] || data.status;
 
+      if (data.status === 'ready_to_encode' || data.status === 'encoding') {
+        btnEdit.style.display = data.status === 'ready_to_encode' ? 'block' : 'none';
+      }
+
       if (data.status === 'ready_to_encode') {
-        // 번역된 자막 오버레이
-        const currentTime = video.currentTime;
-        // 기존 track 제거
-        [...video.querySelectorAll('track')].forEach(t => t.remove());
-        const track = document.createElement('track');
-        track.kind    = 'subtitles';
-        track.label   = 'English';
-        track.srclang = 'en';
-        track.src     = `/subtitle/${jobId}?t=${Date.now()}`;
-        track.default = true;
-        video.appendChild(track);
-        video.currentTime = currentTime;
-        video.textTracks[0] && (video.textTracks[0].mode = 'showing');
+        document.getElementById('lang-row').style.display = 'flex';
+        applyLang(currentLang);
       }
 
       if (data.status === 'encoding') {
-        // 자막 트랙 숨기기
+        document.getElementById('lang-row').style.display = 'none';
         [...video.querySelectorAll('track')].forEach(t => t.remove());
-        if (video.textTracks[0]) video.textTracks[0].mode = 'hidden';
       }
 
       if (data.status === 'done') {
@@ -345,6 +390,42 @@
     volIcon.addEventListener('click', () => {
       video.muted = !video.muted;
       volIcon.textContent = video.muted ? '🔇' : '🔊';
+    });
+
+    // ── 자막 언어 선택 ──
+    let currentLang = 'en';
+
+    function subtitleUrl(lang) {
+      const t = Date.now();
+      if (lang === 'en')   return `/subtitle/${jobId}?t=${t}`;
+      if (lang === 'ko')   return `/subtitle_ko/${jobId}?t=${t}`;
+      if (lang === 'both') return `/subtitle_combined/${jobId}?t=${t}`;
+      return null;
+    }
+
+    function applyLang(lang) {
+      currentLang = lang;
+      const currentTime = video.currentTime;
+      [...video.querySelectorAll('track')].forEach(t => t.remove());
+      if (lang !== 'off') {
+        const track = document.createElement('track');
+        track.kind    = 'subtitles';
+        track.srclang = lang === 'ko' ? 'ko' : 'en';
+        track.src     = subtitleUrl(lang);
+        track.default = true;
+        video.appendChild(track);
+        video.currentTime = currentTime;
+        setTimeout(() => {
+          if (video.textTracks[0]) video.textTracks[0].mode = 'showing';
+        }, 100);
+      }
+      document.querySelectorAll('.lang-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.lang === lang);
+      });
+    }
+
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyLang(btn.dataset.lang));
     });
 
     // ── 배속 조절 ──

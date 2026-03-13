@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Subtitle Editor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0a0c12;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    #header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: .55rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    #header h2 {
+      font-size: .9rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #818cf8, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hbtn {
+      background: none;
+      border: 1px solid #2d3148;
+      color: #94a3b8;
+      font-size: .75rem;
+      font-weight: 600;
+      padding: .3rem .7rem;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+      width: auto;
+      margin: 0;
+    }
+    .hbtn:hover { border-color: #818cf8; color: #818cf8; }
+    .hbtn.primary { background: #818cf8; border-color: #818cf8; color: #fff; }
+    .hbtn.primary:hover { background: #6366f1; }
+    .hbtn.primary:disabled { opacity: .5; cursor: not-allowed; }
+    .hbtn.export { border-color: #34d399; color: #34d399; position: relative; }
+    .hbtn.export:hover { background: rgba(52,211,153,.08); }
+
+    /* Export dropdown */
+    .export-wrap { position: relative; }
+    #export-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      min-width: 190px;
+      z-index: 100;
+      overflow: hidden;
+    }
+    #export-menu.open { display: block; }
+    .export-item {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      padding: .65rem 1rem;
+      font-size: .8rem;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: background .12s;
+      border-bottom: 1px solid #1e2233;
+    }
+    .export-item:last-child { border-bottom: none; }
+    .export-item:hover { background: #1e2233; color: #e2e8f0; }
+    .export-item .ei-icon { font-size: 1rem; }
+    .export-item .ei-desc { font-size: .7rem; color: #4b5563; margin-top: .1rem; }
+
+    /* Language selector */
+    .lang-group {
+      display: flex;
+      gap: .25rem;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: .2rem;
+    }
+    .lang-tab {
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: .25rem .65rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+      width: auto;
+      margin: 0;
+    }
+    .lang-tab:hover { color: #94a3b8; }
+    .lang-tab.active-en   { background: #818cf8; color: #fff; }
+    .lang-tab.active-ko   { background: #38bdf8; color: #0f1117; }
+    .lang-tab.active-both { background: linear-gradient(135deg,#818cf8,#38bdf8); color: #fff; }
+
+    .spacer { flex: 1; }
+
+    #save-status {
+      font-size: .72rem;
+      color: #64748b;
+      min-width: 60px;
+      text-align: right;
+    }
+    #save-status.saved  { color: #34d399; }
+    #save-status.saving { color: #fbbf24; }
+    #save-status.error  { color: #f87171; }
+
+    /* Search + jump */
+    #toolbar {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: .45rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      flex-shrink: 0;
+    }
+    .toolbar-input {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 7px;
+      color: #e2e8f0;
+      font-size: .8rem;
+      padding: .3rem .65rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .toolbar-input:focus { border-color: #818cf8; }
+    .toolbar-input::placeholder { color: #374151; }
+    #search-input { flex: 1; }
+    #jump-input   { width: 100px; }
+    #match-count  { font-size: .72rem; color: #64748b; white-space: nowrap; }
+
+    /* Block list */
+    #block-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: .6rem .9rem;
+    }
+
+    .block {
+      display: flex;
+      gap: .65rem;
+      padding: .55rem .7rem;
+      border-radius: 8px;
+      margin-bottom: .35rem;
+      border: 1px solid transparent;
+      transition: border-color .15s, background .15s;
+    }
+    .block:hover   { background: #13161f; border-color: #2d3148; }
+    .block.focused { border-color: #818cf8; background: rgba(129,140,248,.04); }
+    .block.highlight { background: rgba(56,189,248,.05); border-color: rgba(56,189,248,.25); }
+
+    .block-meta {
+      flex-shrink: 0;
+      text-align: right;
+      min-width: 84px;
+    }
+    .block-idx  { font-size: .68rem; color: #4b5563; font-weight: 700; margin-bottom: .15rem; }
+    .block-time { font-size: .62rem; color: #374151; line-height: 1.4; }
+
+    .block-fields { flex: 1; display: flex; flex-direction: column; gap: .3rem; }
+
+    .field-wrap { position: relative; }
+    .field-label {
+      font-size: .6rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      margin-bottom: .15rem;
+    }
+    .field-label.en { color: #818cf8; }
+    .field-label.ko { color: #38bdf8; }
+
+    textarea {
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: #e2e8f0;
+      font-size: .86rem;
+      line-height: 1.5;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      min-height: 1.5em;
+      overflow: hidden;
+    }
+    textarea.ko-ta { color: #94a3b8; }
+    textarea:focus { color: #f1f5f9; }
+
+    .char-count {
+      font-size: .62rem;
+      color: #374151;
+      text-align: right;
+    }
+    .char-count.warn { color: #fbbf24; }
+    .char-count.over { color: #f87171; }
+
+    #empty-msg {
+      text-align: center;
+      color: #4b5563;
+      padding: 4rem 1rem;
+      font-size: .9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="header">
+    <h2>✏️ Subtitle Editor</h2>
+
+    <div class="lang-group">
+      <button class="lang-tab active-en" data-lang="en">🇺🇸 영어</button>
+      <button class="lang-tab" data-lang="ko">🇰🇷 한국어</button>
+      <button class="lang-tab" data-lang="both">동시</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <input class="toolbar-input" id="jump-input-h" type="number" min="1" placeholder="번호 이동" style="width:90px;" />
+    <button class="hbtn" id="btn-reset">되돌리기</button>
+
+    <div class="export-wrap">
+      <button class="hbtn export" id="btn-import" style="border-color:#fbbf24; color:#fbbf24;">📂 가져오기</button>
+      <div id="import-menu" style="display:none; position:absolute; top:calc(100% + 6px); right:0; background:#1a1d27; border:1px solid #2d3148; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.5); min-width:180px; z-index:100; overflow:hidden;">
+        <div class="export-item" data-import="en">
+          <span class="ei-icon">🇺🇸</span>
+          <div><div>영어 자막으로 가져오기</div><div class="ei-desc">.srt 파일 선택</div></div>
+        </div>
+        <div class="export-item" data-import="ko">
+          <span class="ei-icon">🇰🇷</span>
+          <div><div>한국어 자막으로 가져오기</div><div class="ei-desc">.srt 파일 선택</div></div>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="import-file-input" accept=".srt" style="display:none" />
+
+    <div class="export-wrap">
+      <button class="hbtn export" id="btn-export">⬇️ 내보내기</button>
+      <div id="export-menu">
+        <div class="export-item" data-export="en">
+          <span class="ei-icon">🇺🇸</span>
+          <div>
+            <div>영어 자막</div>
+            <div class="ei-desc">subtitle_en.srt</div>
+          </div>
+        </div>
+        <div class="export-item" data-export="ko">
+          <span class="ei-icon">🇰🇷</span>
+          <div>
+            <div>한국어 자막</div>
+            <div class="ei-desc">subtitle_ko.srt</div>
+          </div>
+        </div>
+        <div class="export-item" data-export="both">
+          <span class="ei-icon">🌐</span>
+          <div>
+            <div>한국어 + 영어 동시</div>
+            <div class="ei-desc">subtitle_bilingual.srt</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button class="hbtn primary" id="btn-save">저장 (Ctrl+S)</button>
+    <span id="save-status"></span>
+  </div>
+
+  <div id="toolbar">
+    <input class="toolbar-input" id="search-input" type="text" placeholder="🔍 자막 검색..." />
+    <span id="match-count"></span>
+  </div>
+
+  <div id="block-list">
+    <div id="empty-msg">자막을 불러오는 중...</div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const jobId  = params.get('job_id');
+
+    const blockList   = document.getElementById('block-list');
+    const searchInput = document.getElementById('search-input');
+    const matchCount  = document.getElementById('match-count');
+    const saveStatus  = document.getElementById('save-status');
+    const btnSave     = document.getElementById('btn-save');
+    const btnReset    = document.getElementById('btn-reset');
+    const jumpInputH  = document.getElementById('jump-input-h');
+
+    let enBlocks = [], koBlocks = [];
+    let origEn = [], origKo = [];
+    let lang = 'en';   // 'en' | 'ko' | 'both'
+
+    // ── 언어 탭 ──
+    document.querySelectorAll('.lang-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        lang = tab.dataset.lang;
+        document.querySelectorAll('.lang-tab').forEach(t => {
+          t.className = 'lang-tab' + (t.dataset.lang === lang ? ` active-${lang}` : '');
+        });
+        applySearch(searchInput.value.trim());
+      });
+    });
+
+    // ── 로드 ──
+    async function load() {
+      if (!jobId) { document.getElementById('empty-msg').textContent = 'job_id가 없습니다.'; return; }
+      try {
+        const [resEn, resKo] = await Promise.all([
+          fetch(`/subtitles/${jobId}`),
+          fetch(`/subtitles_ko/${jobId}`),
+        ]);
+        const dataEn = await resEn.json();
+        const dataKo = await resKo.json();
+        enBlocks = dataEn.blocks || [];
+        koBlocks = dataKo.blocks || [];
+        origEn = JSON.parse(JSON.stringify(enBlocks));
+        origKo = JSON.parse(JSON.stringify(koBlocks));
+        render(enBlocks, koBlocks);
+      } catch (e) {
+        document.getElementById('empty-msg').textContent = '불러오기 실패: ' + e.message;
+      }
+    }
+
+    // ── 렌더링 ──
+    function render(enList, koList) {
+      blockList.innerHTML = '';
+      const list = lang === 'ko' ? koList : enList;
+      if (!list.length) {
+        blockList.innerHTML = '<div id="empty-msg">자막이 없습니다.</div>';
+        return;
+      }
+
+      // idx → block 맵
+      const koMap = Object.fromEntries(koList.map(b => [b.idx, b]));
+      const enMap = Object.fromEntries(enList.map(b => [b.idx, b]));
+
+      list.forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'block';
+        div.dataset.idx = b.idx;
+
+        const [start, end] = b.timestamp.split(' --> ');
+        div.innerHTML = `
+          <div class="block-meta">
+            <div class="block-idx">#${b.idx}</div>
+            <div class="block-time">${fmtTime(start)}<br>→ ${fmtTime(end)}</div>
+          </div>
+          <div class="block-fields"></div>
+        `;
+        const fields = div.querySelector('.block-fields');
+
+        if (lang === 'en' || lang === 'both') {
+          const enBlock = enMap[b.idx];
+          if (enBlock) fields.appendChild(makeField('en', enBlock, enBlocks));
+        }
+        if (lang === 'ko' || lang === 'both') {
+          const koBlock = koMap[b.idx];
+          if (koBlock) fields.appendChild(makeField('ko', koBlock, koBlocks));
+        }
+
+        blockList.appendChild(div);
+      });
+    }
+
+    function makeField(type, block, arr) {
+      const wrap = document.createElement('div');
+      wrap.className = 'field-wrap';
+
+      const label = document.createElement('div');
+      label.className = `field-label ${type}`;
+      label.textContent = type === 'en' ? '🇺🇸 English' : '🇰🇷 한국어';
+      if (lang !== 'both') label.style.display = 'none';
+
+      const ta = document.createElement('textarea');
+      ta.className = type === 'ko' ? 'ko-ta' : '';
+      ta.value = block.text;
+      ta.rows = 1;
+
+      const cc = document.createElement('div');
+      cc.className = 'char-count';
+
+      wrap.appendChild(label);
+      wrap.appendChild(ta);
+      wrap.appendChild(cc);
+
+      autoResize(ta);
+      updateCC(ta, cc);
+
+      ta.addEventListener('input', () => {
+        autoResize(ta);
+        updateCC(ta, cc);
+        const b = arr.find(x => x.idx === block.idx);
+        if (b) b.text = ta.value;
+      });
+      ta.addEventListener('focus', () => {
+        const div = ta.closest('.block');
+        div && div.classList.add('focused');
+      });
+      ta.addEventListener('blur', () => {
+        const div = ta.closest('.block');
+        div && div.classList.remove('focused');
+      });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const all = [...blockList.querySelectorAll('textarea')];
+          const cur = all.indexOf(ta);
+          const next = e.shiftKey ? all[cur - 1] : all[cur + 1];
+          if (next) { next.focus(); next.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        }
+      });
+      return wrap;
+    }
+
+    function autoResize(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
+
+    function updateCC(ta, el) {
+      const lines = ta.value.split('\n');
+      const max   = Math.max(...lines.map(l => l.length));
+      el.className = 'char-count' + (max > 50 ? ' over' : max > 42 ? ' warn' : '');
+      el.textContent = lines.length > 1
+        ? lines.map(l => l.length).join(' / ') + ' chars'
+        : max + ' chars';
+    }
+
+    function fmtTime(t) {
+      const [hms, ms] = t.split(',');
+      const [h, m, s] = hms.split(':').map(Number);
+      const tot = h * 3600 + m * 60 + s;
+      return `${Math.floor(tot/60)}:${(tot%60).toString().padStart(2,'0')}.${ms[0]}`;
+    }
+
+    // ── 저장 ──
+    async function save() {
+      btnSave.disabled = true;
+      saveStatus.className = 'saving';
+      saveStatus.textContent = '저장 중...';
+      try {
+        const tasks = [];
+        if (lang === 'en' || lang === 'both') {
+          tasks.push(fetch(`/subtitles/${jobId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blocks: enBlocks }),
+          }));
+        }
+        if (lang === 'ko' || lang === 'both') {
+          tasks.push(fetch(`/subtitles_ko/${jobId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blocks: koBlocks }),
+          }));
+        }
+        await Promise.all(tasks);
+        saveStatus.className = 'saved';
+        saveStatus.textContent = '✓ 저장됨';
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'subtitle_updated' }, '*');
+        }
+        setTimeout(() => { saveStatus.textContent = ''; saveStatus.className = ''; }, 2000);
+      } catch {
+        saveStatus.className = 'error';
+        saveStatus.textContent = '저장 실패';
+      } finally {
+        btnSave.disabled = false;
+      }
+    }
+
+    // ── 되돌리기 ──
+    btnReset.addEventListener('click', () => {
+      if (!confirm('편집 내용을 되돌리시겠습니까?')) return;
+      enBlocks = JSON.parse(JSON.stringify(origEn));
+      koBlocks = JSON.parse(JSON.stringify(origKo));
+      applySearch(searchInput.value.trim());
+    });
+
+    // ── Ctrl+S ──
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
+    });
+    btnSave.addEventListener('click', save);
+
+    // ── 검색 ──
+    searchInput.addEventListener('input', () => applySearch(searchInput.value.trim()));
+
+    function applySearch(q) {
+      const enList = q ? enBlocks.filter(b => b.text.toLowerCase().includes(q.toLowerCase())) : enBlocks;
+      const koList = q ? koBlocks.filter(b => b.text.toLowerCase().includes(q.toLowerCase())) : koBlocks;
+      const idxSet = new Set([...enList.map(b=>b.idx), ...koList.map(b=>b.idx)]);
+      const filtered = (lang === 'ko' ? koBlocks : enBlocks).filter(b => idxSet.has(b.idx));
+      matchCount.textContent = q ? `${filtered.length}개 일치` : '';
+      render(
+        q ? enBlocks.filter(b => idxSet.has(b.idx)) : enBlocks,
+        q ? koBlocks.filter(b => idxSet.has(b.idx)) : koBlocks,
+      );
+      if (q) blockList.querySelectorAll('.block').forEach(d => d.classList.add('highlight'));
+    }
+
+    // ── 번호로 이동 ──
+    jumpInputH.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const target = blockList.querySelector(`.block[data-idx="${jumpInputH.value}"]`);
+        if (target) {
+          target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          target.querySelector('textarea')?.focus();
+        }
+        jumpInputH.value = '';
+      }
+    });
+
+    // ── 가져오기 ──
+    const btnImport   = document.getElementById('btn-import');
+    const importMenu  = document.getElementById('import-menu');
+    const importInput = document.getElementById('import-file-input');
+    let importTarget  = 'en'; // 어떤 언어로 가져올지
+
+    btnImport.addEventListener('click', (e) => {
+      e.stopPropagation();
+      importMenu.style.display = importMenu.style.display === 'block' ? 'none' : 'block';
+      exportMenu.classList.remove('open');
+    });
+    document.addEventListener('click', () => { importMenu.style.display = 'none'; });
+
+    document.querySelectorAll('[data-import]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        importTarget = item.dataset.import;
+        importMenu.style.display = 'none';
+        importInput.value = '';
+        importInput.click();
+      });
+    });
+
+    importInput.addEventListener('change', () => {
+      const file = importInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const parsed = parseSRT(e.target.result);
+        if (!parsed.length) { alert('SRT 파싱 실패: 올바른 형식의 .srt 파일인지 확인해주세요.'); return; }
+        if (importTarget === 'en') {
+          enBlocks = parsed;
+        } else {
+          koBlocks = parsed;
+        }
+        applySearch(searchInput.value.trim());
+        saveStatus.className = '';
+        saveStatus.textContent = `✓ ${file.name} 가져옴`;
+        setTimeout(() => { saveStatus.textContent = ''; }, 2500);
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+
+    function parseSRT(text) {
+      const blocks = [];
+      const pattern = /(\d+)\r?\n(\d{2}:\d{2}:\d{2}[,.]\d{3} --> \d{2}:\d{2}:\d{2}[,.]\d{3})\r?\n([\s\S]*?)(?=\r?\n\r?\n\d+\r?\n|$)/g;
+      let m;
+      while ((m = pattern.exec(text.trim())) !== null) {
+        const ts = m[2].replace(/\./g, ','); // VTT 점 → SRT 콤마 통일
+        blocks.push({ idx: m[1], timestamp: ts, text: m[3].trim() });
+      }
+      return blocks;
+    }
+
+    // ── 내보내기 ──
+    const btnExport  = document.getElementById('btn-export');
+    const exportMenu = document.getElementById('export-menu');
+
+    btnExport.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', () => exportMenu.classList.remove('open'));
+
+    document.querySelectorAll('.export-item').forEach(item => {
+      item.addEventListener('click', () => {
+        exportMenu.classList.remove('open');
+        exportSRT(item.dataset.export);
+      });
+    });
+
+    function blocksToSRT(blocks) {
+      return blocks.map(b => `${b.idx}\n${b.timestamp}\n${b.text}`).join('\n\n') + '\n';
+    }
+
+    function exportSRT(type) {
+      let content, filename;
+      if (type === 'en') {
+        content  = blocksToSRT(enBlocks);
+        filename = 'subtitle_en.srt';
+      } else if (type === 'ko') {
+        content  = blocksToSRT(koBlocks);
+        filename = 'subtitle_ko.srt';
+      } else {
+        // 동시: 영어 위, 한국어 아래
+        const koMap = Object.fromEntries(koBlocks.map(b => [b.idx, b.text]));
+        const merged = enBlocks.map(b => ({
+          idx: b.idx,
+          timestamp: b.timestamp,
+          text: `${b.text}\n${koMap[b.idx] || ''}`,
+        }));
+        content  = blocksToSRT(merged);
+        filename = 'subtitle_bilingual.srt';
+      }
+      const blob = new Blob([content], { type: 'text/plain; charset=utf-8' });
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ── 플레이어에서 갱신 요청 ──
+    window.addEventListener('message', e => {
+      if (e.data?.type === 'reload_subtitles') load();
+    });
+
+    load();
+  </script>
+</body>
+</html>

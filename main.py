@@ -33,6 +33,10 @@ async def index():
 async def player():
     return FileResponse(BASE / "player.html")
 
+@app.get("/editor")
+async def editor():
+    return FileResponse(BASE / "editor.html")
+
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
@@ -57,15 +61,81 @@ async def status(job_id: str):
     return jobs.get(job_id, {"status": "not_found"})
 
 # ── Subtitle preview (WebVTT) ──────────────────────────────────────────────────
+def srt_to_vtt(path: Path) -> str:
+    content = path.read_text(encoding="utf-8")
+    return "WEBVTT\n\n" + re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", content)
+
 @app.get("/subtitle/{job_id}")
-async def subtitle(job_id: str):
-    srt_path = UPLOADS / f"{job_id}_en.srt"
-    if not srt_path.exists():
+async def subtitle_en(job_id: str):
+    p = UPLOADS / f"{job_id}_en.srt"
+    if not p.exists():
         return JSONResponse({"error": "Not found"}, status_code=404)
-    content = srt_path.read_text(encoding="utf-8")
-    # SRT → WebVTT 변환 (콤마를 점으로)
-    vtt = "WEBVTT\n\n" + re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", content)
-    return Response(content=vtt, media_type="text/vtt")
+    return Response(content=srt_to_vtt(p), media_type="text/vtt")
+
+@app.get("/subtitle_ko/{job_id}")
+async def subtitle_ko(job_id: str):
+    p = UPLOADS / f"{job_id}.srt"
+    if not p.exists():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return Response(content=srt_to_vtt(p), media_type="text/vtt")
+
+@app.get("/subtitle_combined/{job_id}")
+async def subtitle_combined(job_id: str):
+    ko_path = UPLOADS / f"{job_id}.srt"
+    en_path = UPLOADS / f"{job_id}_en.srt"
+    if not ko_path.exists() or not en_path.exists():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    ko_blocks = parse_srt(ko_path.read_text(encoding="utf-8"))
+    en_blocks  = parse_srt(en_path.read_text(encoding="utf-8"))
+    en_map = {b["idx"]: b["text"] for b in en_blocks}
+    lines = ["WEBVTT\n"]
+    for b in ko_blocks:
+        ts = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", b["timestamp"])
+        en_text = en_map.get(b["idx"], "")
+        lines.append(f"\n{b['idx']}\n{ts}\n{en_text}\n{b['text']}")
+    return Response(content="\n".join(lines), media_type="text/vtt")
+
+# ── Subtitles JSON (편집용) ────────────────────────────────────────────────────
+def _load_blocks(path: Path):
+    if not path.exists():
+        return None
+    return parse_srt(path.read_text(encoding="utf-8"))
+
+def _save_blocks(path: Path, blocks: list):
+    lines = [f"{b['idx']}\n{b['timestamp']}\n{b['text']}\n" for b in blocks]
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+@app.get("/subtitles/{job_id}")
+async def get_subtitles(job_id: str):
+    blocks = _load_blocks(UPLOADS / f"{job_id}_en.srt")
+    if blocks is None:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return {"blocks": blocks}
+
+@app.post("/subtitles/{job_id}")
+async def save_subtitles(job_id: str, payload: dict):
+    path = UPLOADS / f"{job_id}_en.srt"
+    if not path.exists():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    blocks = payload.get("blocks", [])
+    _save_blocks(path, blocks)
+    return {"ok": True, "count": len(blocks)}
+
+@app.get("/subtitles_ko/{job_id}")
+async def get_subtitles_ko(job_id: str):
+    blocks = _load_blocks(UPLOADS / f"{job_id}.srt")
+    if blocks is None:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return {"blocks": blocks}
+
+@app.post("/subtitles_ko/{job_id}")
+async def save_subtitles_ko(job_id: str, payload: dict):
+    path = UPLOADS / f"{job_id}.srt"
+    if not path.exists():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    blocks = payload.get("blocks", [])
+    _save_blocks(path, blocks)
+    return {"ok": True, "count": len(blocks)}
 
 # ── Encode (번인 시작) ──────────────────────────────────────────────────────────
 @app.post("/encode/{job_id}")
@@ -137,10 +207,6 @@ def run_pipeline(job_id: str, input_path: str):
             try: p.unlink(missing_ok=True)
             except Exception: pass
 
-    finally:
-        try: srt_path.unlink(missing_ok=True)
-        except Exception: pass
-
 # ── Encode: 번인 ────────────────────────────────────────────────────────────────
 def run_encode(job_id: str):
     job         = jobs[job_id]
@@ -176,7 +242,8 @@ def run_encode(job_id: str):
         jobs[job_id].update({"status": "error", "message": f"❌ 오류: {e}"})
 
     finally:
-        for p in [Path(input_path), en_srt_path]:
+        ko_srt_path = UPLOADS / f"{job_id}.srt"
+        for p in [Path(input_path), en_srt_path, ko_srt_path]:
             try: p.unlink(missing_ok=True)
             except Exception: pass
 
