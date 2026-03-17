@@ -224,6 +224,60 @@
       padding: 4rem 1rem;
       font-size: .9rem;
     }
+
+    .retranslate-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: none;
+      border: 1px solid #2d3148;
+      color: #4b5563;
+      font-size: .62rem;
+      padding: .15rem .4rem;
+      border-radius: 5px;
+      cursor: pointer;
+      width: auto;
+      margin: 0;
+      transition: all .15s;
+    }
+    .retranslate-btn:hover { border-color: #818cf8; color: #818cf8; }
+
+    .retranslate-panel {
+      display: none;
+      margin-top: .35rem;
+      gap: .4rem;
+      align-items: center;
+    }
+    .retranslate-panel.open { display: flex; }
+    .retranslate-req {
+      flex: 1;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: .75rem;
+      padding: .25rem .5rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .retranslate-req:focus { border-color: #818cf8; }
+    .retranslate-req::placeholder { color: #374151; }
+    .retranslate-go {
+      background: #818cf8;
+      border: none;
+      color: #fff;
+      font-size: .7rem;
+      font-weight: 600;
+      padding: .25rem .65rem;
+      border-radius: 6px;
+      cursor: pointer;
+      width: auto;
+      margin: 0;
+      white-space: nowrap;
+      transition: background .15s;
+    }
+    .retranslate-go:hover { background: #6366f1; }
+    .retranslate-go:disabled { opacity: .5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -383,6 +437,9 @@
 
         blockList.appendChild(div);
       });
+
+      // DOM 삽입 후 전체 textarea 높이 재계산
+      blockList.querySelectorAll('textarea').forEach(autoResize);
     }
 
     function makeField(type, block, arr) {
@@ -405,6 +462,65 @@
       wrap.appendChild(label);
       wrap.appendChild(ta);
       wrap.appendChild(cc);
+
+      // 영어 블록에만 재번역 버튼 추가
+      if (type === 'en') {
+        const rtBtn = document.createElement('button');
+        rtBtn.className = 'retranslate-btn';
+        rtBtn.textContent = '🔄 재번역';
+
+        const panel = document.createElement('div');
+        panel.className = 'retranslate-panel';
+
+        const reqInput = document.createElement('input');
+        reqInput.type = 'text';
+        reqInput.className = 'retranslate-req';
+        reqInput.placeholder = '요구사항 입력 (선택)...';
+
+        const goBtn = document.createElement('button');
+        goBtn.className = 'retranslate-go';
+        goBtn.textContent = '번역';
+
+        panel.appendChild(reqInput);
+        panel.appendChild(goBtn);
+        wrap.appendChild(rtBtn);
+        wrap.appendChild(panel);
+
+        rtBtn.addEventListener('click', () => {
+          panel.classList.toggle('open');
+          if (panel.classList.contains('open')) reqInput.focus();
+        });
+
+        const doRetranslate = async () => {
+          goBtn.disabled = true;
+          goBtn.textContent = '번역 중...';
+          try {
+            const res = await fetch(`/retranslate/${jobId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ idx: block.idx, requirement: reqInput.value.trim() }),
+            });
+            const data = await res.json();
+            if (data.text) {
+              ta.value = data.text;
+              autoResize(ta);
+              updateCC(ta, cc);
+              const b = arr.find(x => x.idx === block.idx);
+              if (b) b.text = data.text;
+              panel.classList.remove('open');
+              reqInput.value = '';
+            }
+          } catch (e) {
+            alert('재번역 실패: ' + e.message);
+          } finally {
+            goBtn.disabled = false;
+            goBtn.textContent = '번역';
+          }
+        };
+
+        goBtn.addEventListener('click', doRetranslate);
+        reqInput.addEventListener('keydown', e => { if (e.key === 'Enter') doRetranslate(); });
+      }
 
       autoResize(ta);
       updateCC(ta, cc);

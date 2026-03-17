@@ -288,7 +288,17 @@
 
       if (type === 'job' && id) {
         jobId = id;
-        pollStatus();
+        // 이미 완료된 상태로 열린 경우 즉시 완성 영상 로드
+        fetch(`/status/${jobId}`)
+          .then(r => r.json())
+          .then(d => {
+            if (d.status === 'done') {
+              handleStatus(d);
+            } else {
+              pollStatus();
+            }
+          })
+          .catch(() => pollStatus());
       }
 
       // 편집 창에서 저장 후 자막 트랙 갱신
@@ -322,19 +332,21 @@
     }
 
     function handleStatus(data) {
-      if (data.status === lastStatus) return;
-      lastStatus = data.status;
-
       const labels = {
         queued:          '대기 중...',
         transcribing:    '🎤 음성 인식 중...',
-        translating:     '🌍 번역 중...',
+        translating:     '🌍 번역 및 품질 검토 중...',
         ready_to_encode: '✅ 번역 완료 — 자막 미리보기',
+        dubbing:         '🎙️ 더빙 오디오 생성 중...',
         encoding:        '🎬 번인 인코딩 중...',
         done:            '✅ 완료',
         error:           '❌ 오류',
       };
-      statusLabel.textContent = labels[data.status] || data.status;
+      const elapsed = data.elapsed ? ` (${data.elapsed} 경과)` : '';
+      statusLabel.textContent = (data.message || labels[data.status] || data.status) + elapsed;
+
+      if (data.status === lastStatus) return;
+      lastStatus = data.status;
 
       if (data.status === 'ready_to_encode' || data.status === 'encoding') {
         btnEdit.style.display = data.status === 'ready_to_encode' ? 'block' : 'none';

@@ -175,6 +175,15 @@
     #encode-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
     #encode-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
+    #dub-btn {
+      display: none;
+      background: linear-gradient(135deg, #f472b6, #818cf8);
+      color: #fff;
+      margin-top: .5rem;
+    }
+    #dub-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+    #dub-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
     #done-badge {
       display: none;
       margin-top: 1rem;
@@ -260,6 +269,7 @@
     <div id="review-badge">👀 자막을 확인하고 필요하면 편집한 후 번인을 시작하세요</div>
     <button id="edit-btn" style="display:none; background:#1e2233; border:1px solid #2d3148; color:#94a3b8; margin-top:.6rem;">✏️ 자막 편집</button>
     <button id="encode-btn">🎬 번인 시작</button>
+    <button id="dub-btn">🎙️ 더빙 + 번인</button>
     <div id="done-badge">🎉 영어 자막 생성 완료!</div>
     <button id="download-btn">⬇️ 자막 영상 다운로드</button>
     <div id="error-box"></div>
@@ -282,6 +292,7 @@
     const reviewBadge  = document.getElementById('review-badge');
     const editBtn      = document.getElementById('edit-btn');
     const encodeBtn    = document.getElementById('encode-btn');
+    const dubBtn       = document.getElementById('dub-btn');
     const doneBadge    = document.getElementById('done-badge');
     const downloadBtn  = document.getElementById('download-btn');
     const errorBox     = document.getElementById('error-box');
@@ -291,6 +302,7 @@
       transcribing:    'step-transcribe',
       translating:     'step-translate',
       ready_to_encode: 'step-encode',
+      dubbing:         'step-encode',
       encoding:        'step-encode',
       done:            'step-done',
     };
@@ -367,9 +379,6 @@
       uploadBtn.textContent = '업로드 중...';
       progressSec.style.display = 'block';
 
-      // 플레이어 창 자동으로 열기
-      openPlayer();
-
       const form = new FormData();
       form.append('file', file);
       try {
@@ -403,7 +412,8 @@
     }
 
     function updateUI(data) {
-      statusMsg.textContent    = data.message || data.status;
+      const elapsed = data.elapsed ? ` (${data.elapsed} 경과)` : '';
+      statusMsg.textContent    = (data.message || data.status) + elapsed;
       const pct = data.progress ?? guessProgress(data.status);
       progressFill.style.width = pct + '%';
 
@@ -422,15 +432,16 @@
         reviewBadge.style.display = 'block';
         editBtn.style.display     = 'block';
         encodeBtn.style.display   = 'block';
-        // 플레이어 창이 닫혀있으면 다시 열기
-        if (!playerWindow || playerWindow.closed) openPlayer();
-        else playerWindow.focus();
+        dubBtn.style.display      = 'block';
+        // 번역 완료 시 플레이어 창 열기 (처음 한 번만)
+        openPlayer();
       }
 
-      if (data.status === 'encoding') {
+      if (data.status === 'dubbing' || data.status === 'encoding') {
         reviewBadge.style.display = 'none';
         editBtn.style.display     = 'none';
         encodeBtn.style.display   = 'none';
+        dubBtn.style.display      = 'none';
       }
 
       if (data.status === 'done') {
@@ -438,8 +449,8 @@
         doneBadge.style.display   = 'block';
         downloadBtn.style.display = 'block';
         resetLink.style.display   = 'block';
-        // 플레이어 포커스
-        if (playerWindow && !playerWindow.closed) playerWindow.focus();
+        // 완성 영상 플레이어로 열기
+        openPlayer();
 
         const filename = uploadBtn._filename || 'video.mp4';
         downloadBtn.onclick = () => {
@@ -460,7 +471,7 @@
     }
 
     function guessProgress(status) {
-      return { queued: 5, transcribing: 20, translating: 60, ready_to_encode: 80, encoding: 88, done: 100 }[status] ?? 0;
+      return { queued: 5, transcribing: 20, translating: 60, ready_to_encode: 80, dubbing: 85, encoding: 92, done: 100 }[status] ?? 0;
     }
 
     // 편집 창 열기
@@ -491,8 +502,18 @@
     encodeBtn.addEventListener('click', async () => {
       encodeBtn.disabled    = true;
       encodeBtn.textContent = '번인 중...';
+      dubBtn.disabled       = true;
       reviewBadge.style.display = 'none';
       await fetch(`/encode/${currentJobId}`, { method: 'POST' });
+      pollStatus();
+    });
+
+    dubBtn.addEventListener('click', async () => {
+      dubBtn.disabled       = true;
+      dubBtn.textContent    = '더빙 생성 중...';
+      encodeBtn.disabled    = true;
+      reviewBadge.style.display = 'none';
+      await fetch(`/dub/${currentJobId}`, { method: 'POST' });
       pollStatus();
     });
 
@@ -524,6 +545,9 @@
       encodeBtn.style.display     = 'none';
       encodeBtn.disabled          = false;
       encodeBtn.textContent       = '🎬 번인 시작';
+      dubBtn.style.display        = 'none';
+      dubBtn.disabled             = false;
+      dubBtn.textContent          = '🎙️ 더빙 + 번인';
       doneBadge.style.display     = 'none';
       downloadBtn.style.display   = 'none';
       errorBox.style.display      = 'none';
