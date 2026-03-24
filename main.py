@@ -150,6 +150,15 @@ async def save_subtitles_ko(job_id: str, payload: dict):
     _save_blocks(path, blocks)
     return {"ok": True, "count": len(blocks)}
 
+# ── Original video ─────────────────────────────────────────────────────────────
+@app.get("/original/{job_id}")
+async def original_video(job_id: str):
+    job = jobs.get(job_id, {})
+    input_path = job.get("input_path")
+    if not input_path or not Path(input_path).exists():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return FileResponse(input_path, media_type="video/mp4")
+
 # ── Encode (번인 시작) ──────────────────────────────────────────────────────────
 @app.post("/encode/{job_id}")
 async def encode(job_id: str):
@@ -208,16 +217,6 @@ def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> 
     resp.raise_for_status()
     return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-
-# ── Dub (더빙 + 번인 시작) ──────────────────────────────────────────────────────
-@app.post("/dub/{job_id}")
-async def dub(job_id: str):
-    job = jobs.get(job_id, {})
-    if job.get("status") != "ready_to_encode":
-        return JSONResponse({"error": "Not ready"}, status_code=400)
-    jobs[job_id].update({"status": "dubbing", "message": "🎙️ 더빙 오디오 생성 중...", "progress": 80})
-    executor.submit(run_dub_and_encode, job_id)
-    return {"ok": True}
 
 # ── Download ───────────────────────────────────────────────────────────────────
 @app.get("/download/{job_id}")
@@ -382,92 +381,6 @@ def run_encode(job_id: str):
     finally:
         ko_srt_path = UPLOADS / f"{job_id}.srt"
         for p in [Path(input_path), en_srt_path, ko_srt_path]:
-            try: p.unlink(missing_ok=True)
-            except Exception: pass
-
-
-# ── Dub + Encode: 더빙 생성 후 번인 ─────────────────────────────────────────────
-def run_dub_and_encode(job_id: str):
-    job          = jobs[job_id]
-    input_path   = job["input_path"]
-    en_srt_path  = UPLOADS / f"{job_id}_en.srt"
-    dub_wav_path = UPLOADS / f"{job_id}_dub.wav"
-    output_path  = OUTPUTS / f"{job_id}.mp4"
-    tada_python  = BASE / "tada_env" / "bin" / "python"
-    dub_script   = BASE / "dub_worker.py"
-
-    try:
-        # Step 1: 더빙 WAV 생성 (dub_worker.py subprocess)
-        t_dub = time.time()
-        jobs[job_id].update({"stage_start": t_dub})
-
-        proc = subprocess.Popen(
-            [str(tada_python), str(dub_script), job_id],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
-        for line in proc.stdout:
-            line = line.strip()
-            if line.startswith("PROGRESS:"):
-                parts = line.split(":", 2)
-                pct   = 80 + int(parts[1]) * 0.1  # 80~90% 구간
-                msg   = parts[2] if len(parts) > 2 else ""
-                elapsed = fmt_elapsed(time.time() - t_dub)
-                jobs[job_id].update({"message": f"🎙️ {msg} | {elapsed}", "progress": pct, "stage_start": t_dub})
-            elif line.startswith("WARNING:"):
-                pass  # 개별 실패는 무시
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError("더빙 생성 실패 (dub_worker 오류)")
-
-        dub_elapsed = fmt_elapsed(time.time() - t_dub)
-
-        # Step 2: ffmpeg — 자막 번인 + 더빙 오디오 믹싱
-        t_enc = time.time()
-        jobs[job_id].update({
-            "status": "encoding",
-            "message": f"🎬 자막 번인 및 더빙 합성 중... | 더빙 {dub_elapsed}",
-            "progress": 90,
-            "stage_start": t_enc,
-        })
-
-        srt_str = str(en_srt_path).replace("\\", "/").replace(":", "\\:")
-        style   = "FontName=Arial,FontSize=20,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Bold=1,Alignment=2"
-        filter_complex = (
-            f"[0:v]subtitles={srt_str}:force_style='{style}'[vout];"
-            f"[1:a]apad[aout]"
-        )
-        r = subprocess.run(
-            [
-                "ffmpeg", "-i", input_path, "-i", str(dub_wav_path),
-                "-filter_complex", filter_complex,
-                "-map", "[vout]", "-map", "[aout]",
-                "-c:v", "libx264", "-crf", "18", "-preset", "fast",
-                "-c:a", "aac", "-b:a", "192k",
-                "-shortest",
-                "-movflags", "+faststart",
-                str(output_path), "-y",
-            ],
-            capture_output=True, timeout=7200,
-        )
-        if r.returncode != 0 or not output_path.exists():
-            raise RuntimeError(f"ffmpeg 실패:\n{r.stderr.decode()}")
-
-        encode_elapsed = fmt_elapsed(time.time() - t_enc)
-        prev_timings = jobs[job_id].get("timings", {})
-        jobs[job_id].update({
-            "status":   "done",
-            "message":  f"✅ 완료! | 더빙 {dub_elapsed} / 인코딩 {encode_elapsed}",
-            "progress": 100,
-            "output":   str(output_path),
-            "timings":  {**prev_timings, "dub": dub_elapsed, "encode": encode_elapsed},
-        })
-
-    except Exception as e:
-        jobs[job_id].update({"status": "error", "message": f"❌ 오류: {e}"})
-
-    finally:
-        ko_srt_path = UPLOADS / f"{job_id}.srt"
-        for p in [Path(input_path), en_srt_path, ko_srt_path, dub_wav_path]:
             try: p.unlink(missing_ok=True)
             except Exception: pass
 

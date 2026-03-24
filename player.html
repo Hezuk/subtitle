@@ -277,29 +277,23 @@
     btnEdit.addEventListener('mouseover', () => { btnEdit.style.borderColor='#818cf8'; btnEdit.style.color='#818cf8'; });
     btnEdit.addEventListener('mouseout',  () => { btnEdit.style.borderColor='#2d3148'; btnEdit.style.color='#94a3b8'; });
 
+    // ── URL 파라미터에서 job_id 읽기 ──
+    const params = new URLSearchParams(window.location.search);
+    const urlJobId = params.get('job_id');
+    if (urlJobId) {
+      jobId = urlJobId;
+      fetch(`/status/${jobId}`)
+        .then(r => r.json())
+        .then(d => {
+          handleStatus(d);
+          if (!['done', 'error'].includes(d.status)) pollStatus();
+        })
+        .catch(() => pollStatus());
+    }
+
     // ── 부모 창에서 메시지 수신 ──
     window.addEventListener('message', (e) => {
-      const { type, url, id } = e.data || {};
-
-      if (type === 'original' && url) {
-        loadVideo(url);
-        statusLabel.textContent = '원본 영상';
-      }
-
-      if (type === 'job' && id) {
-        jobId = id;
-        // 이미 완료된 상태로 열린 경우 즉시 완성 영상 로드
-        fetch(`/status/${jobId}`)
-          .then(r => r.json())
-          .then(d => {
-            if (d.status === 'done') {
-              handleStatus(d);
-            } else {
-              pollStatus();
-            }
-          })
-          .catch(() => pollStatus());
-      }
+      const { type } = e.data || {};
 
       // 편집 창에서 저장 후 자막 트랙 갱신
       if (type === 'reload_subtitle' && jobId) {
@@ -353,6 +347,7 @@
       }
 
       if (data.status === 'ready_to_encode') {
+        loadVideo(`/original/${jobId}`);
         document.getElementById('lang-row').style.display = 'flex';
         applyLang(currentLang);
       }
@@ -455,6 +450,7 @@
       const sec = Math.floor(s % 60);
       return `${m}:${sec.toString().padStart(2, '0')}`;
     }
+
   </script>
 </body>
 </html>

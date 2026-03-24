@@ -27,7 +27,6 @@ GitHub: https://github.com/Hezuk/subtitle (private)
 
 **Backend:** `main.py` — single-file FastAPI
 **Frontend:** `index.html` (main), `player.html` (popup player), `editor.html` (popup editor)
-**Dubbing worker:** `dub_worker.py` — standalone subprocess for TADA TTS
 **Windows installer:** `설치.bat`, `실행.bat`
 
 ### Pipeline (two-phase)
@@ -40,26 +39,17 @@ POST /upload
       3. Gemini QA review + retry    → {job_id}_en.srt (corrected)
          - MAX_RETRIES=2: 불량 블록은 [RETRANSLATE] 마킹 후 재번역
       → status: ready_to_encode  (user reviews/edits subtitles)
-      → player.html 자동 오픈
+      → player.html 자동 오픈 (/player?job_id=xxx)
 
-POST /encode/{job_id}          (자막 번인만)
+POST /encode/{job_id}
   → run_encode()
       4. ffmpeg burn-in + -movflags +faststart  → outputs/{job_id}.mp4
       → status: done
-
-POST /dub/{job_id}             (더빙 + 자막 번인)
-  → run_dub_and_encode()
-      4. dub_worker.py subprocess    → uploads/{job_id}_dub.wav
-      5. ffmpeg burn-in + dub audio  → outputs/{job_id}.mp4
-         (-c:a aac -shortest -movflags +faststart)
-      → status: done
-      → player.html 자동 오픈 (완성 영상 로드)
 ```
 
 ### Job state machine
 
-번인: `queued → transcribing → translating → ready_to_encode → encoding → done`
-더빙: `queued → transcribing → translating → ready_to_encode → dubbing → encoding → done`
+`queued → transcribing → translating → ready_to_encode → encoding → done`
 
 ### /status response fields
 
@@ -80,8 +70,8 @@ POST /dub/{job_id}             (더빙 + 자막 번인)
 | GET | `/editor` | editor.html |
 | POST | `/upload` | 영상 업로드, job 생성 |
 | GET | `/status/{job_id}` | job 상태 폴링 |
+| GET | `/original/{job_id}` | 원본 영상 서빙 (player 미리보기용) |
 | POST | `/encode/{job_id}` | 번인 시작 (ready_to_encode 상태에서만) |
-| POST | `/dub/{job_id}` | 더빙+번인 시작 (ready_to_encode 상태에서만) |
 | GET | `/download/{job_id}` | 완성 영상 다운로드 |
 | GET | `/subtitle/{job_id}` | 영어 자막 WebVTT |
 | GET | `/subtitle_ko/{job_id}` | 한국어 자막 WebVTT |
@@ -111,20 +101,9 @@ POST /dub/{job_id}             (더빙 + 자막 번인)
 - **재시도 로직**: `[RETRANSLATE]` 블록은 원문 재번역 후 재검토 (최대 2회)
 - **개별 재번역**: `/retranslate/{job_id}` — 에디터에서 요구사항 지정 가능
 
-### TADA TTS 더빙 (dub_worker.py)
-- 모델: `HumeAI/tada-1b` (Llama 3.2 기반 TTS)
-- 코덱: `HumeAI/tada-codec` (encoder)
-- 레퍼런스 오디오: `tada/tada/samples/ljspeech.wav` (교체 시 본인 목소리 사용 가능)
-- **Device: CPU** (MPS는 generate() 단계에서 내부 device mismatch로 무음 출력됨)
-- 가상환경: `tada_env/` (별도 pip install -e ./tada 필요)
-- Sample rate: 24000 Hz, mono
-- 진행 상황: stdout으로 `PROGRESS:{pct}:{msg}` 전송
-- 오디오 타임라인: SRT 타임스탬프에 맞춰 numpy array에 배치, 정규화 후 WAV 저장
-
 ### ffmpeg
 - libass 필요: `brew tap homebrew-ffmpeg/ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-libass`
 - 번인 옵션: `libx264 -crf 18 -preset fast -movflags +faststart`
-- 더빙 옵션: 위 + `-c:a aac -b:a 192k -shortest`
 - 자막 스타일: Arial, 20pt, 흰색 텍스트, 검정 외곽선
 - `-movflags +faststart` 필수: 없으면 moov atom 손상으로 파일 재생 불가
 
@@ -132,7 +111,6 @@ POST /dub/{job_id}             (더빙 + 자막 번인)
 - 임시 파일: `uploads/{job_id}.*` — 각 단계 완료 후 삭제
 - 한국어 SRT: `ready_to_encode` 상태에서 유지, `done` 후 삭제
 - 영어 SRT: `done` 후 삭제
-- 더빙 WAV: `done` 후 삭제
 - 출력 파일: `outputs/{job_id}.mp4` — 영구 보관
 
 ### SRT 파싱 (parse_srt)
@@ -143,12 +121,17 @@ POST /dub/{job_id}             (더빙 + 자막 번인)
 
 ## Frontend 통신 구조
 
+### player.html 오픈 방식
+- URL 파라미터로 job_id 전달: `/player?job_id=xxx`
+- player.html은 `URLSearchParams`로 job_id를 읽어 즉시 `/status` 조회
+- `ready_to_encode` 상태에서 `/original/{job_id}`로 원본 영상 로드
+- `done` 상태에서 `/download/{job_id}`로 완성 영상 로드
+- `playerOpened` 플래그로 한 번만 열림 (폴링 시 중복 오픈 방지)
+
 ### index.html ↔ player.html (postMessage)
 ```js
-// index → player
-{ type: 'original', url: objectURL }   // 원본 영상
-{ type: 'job', id: jobId }             // job 시작
-{ type: 'reload_subtitle' }            // 자막 편집 후 트랙 갱신
+// index → player (자막 편집 후 중계)
+{ type: 'reload_subtitle' }
 ```
 
 ### index.html ↔ editor.html (postMessage)
@@ -161,21 +144,21 @@ POST /dub/{job_id}             (더빙 + 자막 번인)
 ```
 
 ### player.html 동작
-- `job` 메시지 수신 시 즉시 status 조회 → `done`이면 `/download/{job_id}` 바로 로드
-- `ready_to_encode` 도달 시 자막 언어 선택 행 표시 (끄기/영어/한국어/동시)
-- `done` 도달 시 완성 영상 자동 로드
+- URL에서 `job_id` 읽으면 즉시 status 조회 → `handleStatus()` 호출
+- `ready_to_encode` 도달 시 `/original/{job_id}` 로드 + 자막 언어 선택 행 표시
+- `done` 도달 시 `/download/{job_id}` 로드
 - 배속: `0.5x / 1x / 1.5x / 2x / 3x`
 - status 메시지에 경과 시간 표시 (폴링 2초마다 갱신)
 
 ### player.html 자동 오픈 시점
 - `ready_to_encode`: 번역 완료 시 첫 오픈 (원본 영상 + 자막 미리보기)
-- `done`: 번인/더빙 완료 시 재오픈 또는 포커스 (완성 영상 로드)
+- `done`: 인코딩 완료 시 재오픈 (완성 영상 로드)
 
 ### editor.html 기능
 - 언어 탭: 영어 / 한국어 / 동시 편집
 - 자막 검색, 번호로 이동
 - 글자 수 경고 (42자 초과 노란색, 50자 초과 빨간색) — 가장 긴 줄 기준
-- **🔄 재번역**: 각 영어 자막 블록에서 요구사항 입력 후 개별 재번역
+- **재번역**: 각 영어 자막 블록에서 요구사항 입력 후 개별 재번역
 - **저장** (Ctrl+S): 서버에 POST, 플레이어 자막 자동 갱신
 - **내보내기**: 영어 SRT / 한국어 SRT / 한국어+영어 동시 SRT 다운로드
 - **가져오기**: 외부 .srt 파일을 영어 또는 한국어 자막으로 import
@@ -188,4 +171,3 @@ POST /dub/{job_id}             (더빙 + 자막 번인)
 - ffmpeg: `winget install Gyan.FFmpeg`
 - 가상환경: `venv/` 폴더에 자동 생성
 - `.env` 파일을 별도로 전달 (GitHub에 올라가지 않음)
-- **주의**: TADA 더빙 기능은 Windows 미지원 (tada_env 별도 구성 필요)
