@@ -17,6 +17,8 @@
 - **재번역**: 마음에 안 드는 자막에 요구사항 입력 후 개별 재번역
 - **단계별 소요 시간**: 각 처리 단계의 경과/완료 시간 실시간 표시
 - **SRT 내보내기/가져오기**: 영어·한국어·동시 SRT 다운로드 및 외부 SRT 가져오기
+- **작업 상태 영속화**: 서버 재시작 후에도 완료된 작업 다운로드, 대기 중인 작업 재시도 가능
+- **인코딩 실패 복구**: 인코딩 실패 시 파일 유지, 자막 수정 후 재시도 가능
 
 ## 설치 방법 (Mac)
 
@@ -55,6 +57,26 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 1. 저장소 다운로드 후 `.env` 파일 생성 (`GEMINI_API_KEY` 입력)
 2. `설치.bat` 더블클릭 (10~20분 소요)
 3. `실행.bat` 더블클릭 → 브라우저 자동으로 열림
+
+## 프로젝트 구조
+
+```
+subtitle/
+├── main.py                  ← FastAPI 라우트 + 파이프라인 오케스트레이션
+├── config.py                ← 경로 상수
+├── store/jobs.py            ← job 상태 관리 (메모리 + JSON 디스크 영속화)
+├── utils/
+│   ├── srt.py               ← SRT 파싱/변환, 블록 검증
+│   ├── errors.py            ← 예외 클래스 (사용자 메시지 분리)
+│   └── log.py               ← 구조화 로거
+├── services/
+│   ├── transcription.py     ← Whisper 음성인식
+│   ├── translation.py       ← Gemini 번역/검토/재번역
+│   └── encoding.py          ← ffmpeg 자막 번인
+├── index.html               ← 메인 페이지
+├── player.html              ← 팝업 플레이어
+└── editor.html              ← 팝업 에디터
+```
 
 ## 사용 기술
 

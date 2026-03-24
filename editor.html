@@ -593,16 +593,26 @@
             body: JSON.stringify({ blocks: koBlocks }),
           }));
         }
-        await Promise.all(tasks);
+        const results = await Promise.all(tasks);
+        // 서버 검증 실패 확인
+        for (const res of results) {
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || '저장 실패');
+          }
+        }
         saveStatus.className = 'saved';
         saveStatus.textContent = '✓ 저장됨';
+        // 같은 job의 모든 창(player, index)에 자막 갱신 알림
+        try { new BroadcastChannel(`subtitle-${jobId}`).postMessage('subtitle_updated'); } catch {}
+        // fallback: opener가 있으면 기존 방식도 유지
         if (window.opener && !window.opener.closed) {
           window.opener.postMessage({ type: 'subtitle_updated' }, '*');
         }
         setTimeout(() => { saveStatus.textContent = ''; saveStatus.className = ''; }, 2000);
-      } catch {
+      } catch (err) {
         saveStatus.className = 'error';
-        saveStatus.textContent = '저장 실패';
+        saveStatus.textContent = err.message || '저장 실패';
       } finally {
         btnSave.disabled = false;
       }

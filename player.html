@@ -291,12 +291,16 @@
         .catch(() => pollStatus());
     }
 
-    // ── 부모 창에서 메시지 수신 ──
+    // ── 자막 갱신 수신 (BroadcastChannel + postMessage fallback) ──
+    if (jobId) {
+      try {
+        const bc = new BroadcastChannel(`subtitle-${jobId}`);
+        bc.onmessage = () => reloadSubtitleTrack();
+      } catch {}
+    }
     window.addEventListener('message', (e) => {
       const { type } = e.data || {};
-
-      // 편집 창에서 저장 후 자막 트랙 갱신
-      if (type === 'reload_subtitle' && jobId) {
+      if ((type === 'reload_subtitle' || type === 'subtitle_updated') && jobId) {
         reloadSubtitleTrack();
       }
     });
