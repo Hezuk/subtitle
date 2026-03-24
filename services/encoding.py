@@ -1,15 +1,16 @@
 import subprocess
 from pathlib import Path
+from config import FFMPEG_SUBTITLE_STYLE, FFMPEG_CRF, FFMPEG_PRESET, FFMPEG_TIMEOUT
 from utils.log import get_logger
 from utils.errors import EncodeError
 
 log = get_logger("encoding")
 
-SUBTITLE_STYLE = "FontName=Arial,FontSize=20,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Bold=1,Alignment=2"
 
-
-def encode_video(input_path: str, srt_path: Path, output_path: Path, timeout: int = 7200):
+def encode_video(input_path: str, srt_path: Path, output_path: Path, timeout: int | None = None):
     """ffmpeg으로 자막 번인. 실패 시 EncodeError."""
+    if timeout is None:
+        timeout = FFMPEG_TIMEOUT
     srt_str = str(srt_path).replace("\\", "/").replace(":", "\\:")
 
     log.info("ffmpeg 시작: input=%s srt=%s output=%s", input_path, srt_path, output_path)
@@ -17,8 +18,8 @@ def encode_video(input_path: str, srt_path: Path, output_path: Path, timeout: in
         r = subprocess.run(
             [
                 "ffmpeg", "-i", input_path,
-                "-vf", f"subtitles={srt_str}:force_style='{SUBTITLE_STYLE}'",
-                "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                "-vf", f"subtitles={srt_str}:force_style='{FFMPEG_SUBTITLE_STYLE}'",
+                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", FFMPEG_PRESET,
                 "-c:a", "copy",
                 "-movflags", "+faststart",
                 str(output_path), "-y",
@@ -37,7 +38,6 @@ def encode_video(input_path: str, srt_path: Path, output_path: Path, timeout: in
 
     if r.returncode != 0 or not output_path.exists():
         stderr = r.stderr.decode(errors="replace")
-        # 마지막 줄이 보통 핵심 에러 메시지
         stderr_last = stderr.strip().split('\n')[-1][:200] if stderr.strip() else "unknown error"
         log.error("ffmpeg 실패 (rc=%d): %s", r.returncode, stderr_last)
         log.debug("ffmpeg stderr 전문:\n%s", stderr)

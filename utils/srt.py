@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from config import MAX_SUBTITLE_CHARS
 
 _TS_RE = re.compile(r'^(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})$')
 
@@ -50,8 +51,10 @@ def srt_to_vtt(path: Path) -> str:
     return "WEBVTT\n\n" + re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", content)
 
 
-def wrap_subtitle(text: str, max_chars: int = 42) -> str:
+def wrap_subtitle(text: str, max_chars: int | None = None) -> str:
     """한 줄이 max_chars를 초과하면 중간 공백에서 두 줄로 분할."""
+    if max_chars is None:
+        max_chars = MAX_SUBTITLE_CHARS
     lines = text.splitlines()
     wrapped = []
     for line in lines:
@@ -64,6 +67,7 @@ def wrap_subtitle(text: str, max_chars: int = 42) -> str:
             right = line.find(' ', mid)
             if left == -1 and right == -1:
                 wrapped.append(line)
+                continue
             elif left == -1:
                 split_at = right
             elif right == -1:

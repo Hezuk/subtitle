@@ -4,12 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 import aiofiles
-from dotenv import load_dotenv
 
-load_dotenv()
-
-from config import BASE, UPLOADS, OUTPUTS
-from store.jobs import jobs, save_job, load_job, restore_jobs
+from config import (
+    BASE, UPLOADS, OUTPUTS,
+    MAX_UPLOAD_MB, ALLOWED_EXTS,
+    MAX_BLOCKS, MAX_TEXT_LEN, MAX_REQUIREMENT_LEN, MAX_RETRIES,
+)
+from store.jobs import jobs, save_job, load_job, restore_jobs, cleanup_job_files, cleanup_stale
 from utils.srt import (
     fmt_elapsed, parse_srt, segments_to_srt, srt_to_vtt,
     validate_blocks, load_blocks, save_blocks,
@@ -32,6 +33,7 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup():
     restore_jobs()
+    cleanup_stale()
 
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
@@ -52,14 +54,24 @@ async def editor():
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
     if not file.content_type or not file.content_type.startswith("video/"):
-        raise HTTPException(400, "Video file required")
+        raise HTTPException(400, "동영상 파일만 업로드할 수 있습니다.")
+
+    ext = (Path(file.filename or "video.mp4").suffix or ".mp4").lower()
+    if ext not in ALLOWED_EXTS:
+        raise HTTPException(400, f"지원하지 않는 형식입니다. ({', '.join(sorted(ALLOWED_EXTS))})")
 
     job_id = uuid.uuid4().hex
-    ext = Path(file.filename or "video.mp4").suffix or ".mp4"
     input_path = UPLOADS / f"{job_id}{ext}"
+    max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+    written = 0
 
     async with aiofiles.open(input_path, "wb") as f:
         while chunk := await file.read(1024 * 1024):
+            written += len(chunk)
+            if written > max_bytes:
+                await f.close()
+                input_path.unlink(missing_ok=True)
+                raise HTTPException(400, f"파일이 너무 큽니다. (최대 {MAX_UPLOAD_MB}MB)")
             await f.write(chunk)
 
     jobs[job_id] = {"status": "queued", "message": "대기 중...", "filename": file.filename}
@@ -114,6 +126,14 @@ async def subtitle_combined(job_id: str):
 
 
 # ── Subtitles JSON (편집용) ──────────────────────────────────────────────────
+def _check_blocks_limits(blocks: list) -> str | None:
+    if len(blocks) > MAX_BLOCKS:
+        return f"블록 수가 너무 많습니다. (최대 {MAX_BLOCKS}개)"
+    for b in blocks:
+        if isinstance(b, dict) and len(b.get("text", "")) > MAX_TEXT_LEN:
+            return f"블록 {b.get('idx', '?')}: 텍스트가 너무 깁니다. (최대 {MAX_TEXT_LEN}자)"
+    return None
+
 @app.get("/subtitles/{job_id}")
 async def get_subtitles(job_id: str):
     blocks = load_blocks(UPLOADS / f"{job_id}_en.srt")
@@ -127,9 +147,10 @@ async def save_subtitles(job_id: str, payload: dict):
     if not path.exists():
         return JSONResponse({"error": "Not found"}, status_code=404)
     blocks = payload.get("blocks", [])
-    err = validate_blocks(blocks)
-    if err:
-        return JSONResponse({"error": err}, status_code=400)
+    for check in (_check_blocks_limits, validate_blocks):
+        err = check(blocks)
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
     save_blocks(path, blocks)
     return {"ok": True, "count": len(blocks)}
 
@@ -146,9 +167,10 @@ async def save_subtitles_ko(job_id: str, payload: dict):
     if not path.exists():
         return JSONResponse({"error": "Not found"}, status_code=404)
     blocks = payload.get("blocks", [])
-    err = validate_blocks(blocks)
-    if err:
-        return JSONResponse({"error": err}, status_code=400)
+    for check in (_check_blocks_limits, validate_blocks):
+        err = check(blocks)
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
     save_blocks(path, blocks)
     return {"ok": True, "count": len(blocks)}
 
@@ -178,8 +200,12 @@ async def encode(job_id: str):
 # ── Retranslate (개별 자막 재번역) ─────────────────────────────────────────────
 @app.post("/retranslate/{job_id}")
 async def retranslate(job_id: str, payload: dict):
-    idx = str(payload.get("idx", ""))
+    idx = str(payload.get("idx", "")).strip()
+    if not idx:
+        return JSONResponse({"error": "블록 번호가 필요합니다."}, status_code=400)
     requirement = payload.get("requirement", "").strip()
+    if len(requirement) > MAX_REQUIREMENT_LEN:
+        return JSONResponse({"error": f"요구사항이 너무 깁니다. (최대 {MAX_REQUIREMENT_LEN}자)"}, status_code=400)
 
     ko_blocks = load_blocks(UPLOADS / f"{job_id}.srt")
     if ko_blocks is None:
@@ -248,8 +274,7 @@ def run_pipeline(job_id: str, input_path: str):
 
         current_en = {b["idx"]: all_translated.get(b["idx"], b["text"]) for b in blocks}
 
-        # Step 3: 검토 + 불량 재번역 (최대 2회)
-        MAX_RETRIES = 2
+        # Step 3: 검토 + 불량 재번역 (최대 MAX_RETRIES회)
         t2 = time.time()
         for attempt in range(MAX_RETRIES):
             attempt_label = f" ({attempt+1}/{MAX_RETRIES})" if attempt > 0 else ""
@@ -313,17 +338,13 @@ def run_pipeline(job_id: str, input_path: str):
         log.error("job=%s 파이프라인 실패 (%s): %s", job_id, type(e).__name__, e.detail)
         jobs[job_id].update({"status": "error", "message": f"❌ {e.user_message}"})
         save_job(job_id)
-        for p in [Path(input_path), srt_path, en_srt_path]:
-            try: p.unlink(missing_ok=True)
-            except Exception: pass
+        cleanup_job_files(job_id)
 
     except Exception as e:
         log.error("job=%s 파이프라인 예기치 않은 오류: %s", job_id, e, exc_info=True)
         jobs[job_id].update({"status": "error", "message": "❌ 예기치 않은 오류가 발생했습니다."})
         save_job(job_id)
-        for p in [Path(input_path), srt_path, en_srt_path]:
-            try: p.unlink(missing_ok=True)
-            except Exception: pass
+        cleanup_job_files(job_id)
 
 
 # ── Encode: 번인 ──────────────────────────────────────────────────────────────
@@ -351,10 +372,7 @@ def run_encode(job_id: str):
         save_job(job_id)
 
         # 성공 시에만 임시 파일 삭제
-        ko_srt_path = UPLOADS / f"{job_id}.srt"
-        for p in [Path(input_path), en_srt_path, ko_srt_path]:
-            try: p.unlink(missing_ok=True)
-            except Exception: pass
+        cleanup_job_files(job_id)
 
     except EncodeError as e:
         log.error("job=%s 인코딩 실패: %s", job_id, e.detail)

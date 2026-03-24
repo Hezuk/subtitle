@@ -9,9 +9,10 @@ cd /Users/sunghoonkim/claude/subtitle
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-API key is loaded from `.env` (see `.env.example`):
+All settings are loaded from `.env` via `config.py` (see `.env.example`):
 ```
-GEMINI_API_KEY=...
+GEMINI_API_KEY=...          # 필수
+GEMINI_MODEL=...            # 선택 (기본값 있음)
 ```
 
 To stop:
@@ -28,7 +29,7 @@ GitHub: https://github.com/Hezuk/subtitle (private)
 ```
 subtitle/
 ├── main.py                  ← FastAPI 라우트 + 파이프라인 오케스트레이션
-├── config.py                ← 경로 상수 (BASE, UPLOADS, OUTPUTS, JOBS_DIR)
+├── config.py                ← 전역 설정 (경로, API, 모델, 제한값 — .env에서 로드)
 ├── store/
 │   └── jobs.py              ← job 상태 관리 (메모리 dict + JSON 디스크 영속화)
 ├── utils/
@@ -122,29 +123,57 @@ POST /encode/{job_id}
 
 ---
 
+## Configuration (config.py)
+
+모든 설정값은 `config.py`에서 `os.environ.get()`으로 로드 (`.env` → 환경변수 → 기본값).
+
+| 설정 | 환경변수 | 기본값 | 설명 |
+|------|---------|--------|------|
+| API | `GEMINI_API_KEY` | (필수) | Gemini API 키 |
+| API | `GEMINI_MODEL` | `gemini-3-flash-preview` | Gemini 모델명 |
+| API | `GEMINI_TIMEOUT` | `300` | Gemini API 타임아웃 (초) |
+| API | `GEMINI_RETRANSLATE_TIMEOUT` | `60` | 개별 재번역 타임아웃 (초) |
+| Whisper | `WHISPER_MODEL` | `large-v3-turbo` | Whisper 모델명 |
+| Whisper | `WHISPER_LANGUAGE` | `ko` | 음성인식 언어 |
+| Whisper | `WHISPER_FP16` | `false` | FP16 사용 여부 |
+| ffmpeg | `FFMPEG_SUBTITLE_STYLE` | `FontName=Arial,...` | ASS 자막 스타일 |
+| ffmpeg | `FFMPEG_CRF` | `18` | 인코딩 품질 |
+| ffmpeg | `FFMPEG_PRESET` | `fast` | 인코딩 속도 |
+| ffmpeg | `FFMPEG_TIMEOUT` | `7200` | 인코딩 타임아웃 (초) |
+| 업로드 | `MAX_UPLOAD_MB` | `4096` | 최대 업로드 크기 (MB) |
+| 자막 | `MAX_BLOCKS` | `5000` | 최대 자막 블록 수 |
+| 자막 | `MAX_TEXT_LEN` | `1000` | 블록당 최대 글자 수 |
+| 자막 | `MAX_SUBTITLE_CHARS` | `42` | 줄 자동 분할 기준 글자 수 |
+| 자막 | `MAX_REQUIREMENT_LEN` | `500` | 재번역 요구사항 최대 길이 |
+| 파이프라인 | `MAX_RETRIES` | `2` | QA 재번역 최대 횟수 |
+| 정리 | `STALE_DAYS` | `7` | error job 보관 일수 |
+| 정리 | `ORPHAN_HOURS` | `24` | orphan 파일 보관 시간 |
+
+---
+
 ## Key technical details
 
 ### Whisper (services/transcription.py)
-- 모델: `large-v3-turbo` (메모리에 lazy load)
-- `language="ko"`, `fp16=False`
+- 모델: `WHISPER_MODEL` (기본 `large-v3-turbo`, 메모리에 lazy load)
+- `language=WHISPER_LANGUAGE`, `fp16=WHISPER_FP16`
 - 첫 실행 시 모델 다운로드 (~1.5GB)
 - 실패 시 `TranscriptionError` 발생
 
 ### Gemini 번역 + QA (services/translation.py)
-- 모델: `gemini-3-flash-preview`
+- 모델: `GEMINI_MODEL` (기본 `gemini-3-flash-preview`)
 - REST API: `generativelanguage.googleapis.com/v1beta/models/...`
 - 전체 자막 블록을 한 번에 전송 (`\n---\n` 구분자)
-- 번역 후 `wrap_subtitle()` 로 42자 초과 줄 자동 2줄 분할
+- 번역 후 `wrap_subtitle()` 로 `MAX_SUBTITLE_CHARS` 초과 줄 자동 2줄 분할
 - **번역 프롬프트**: natural/sophisticated English, complete sentence/clause
 - **검토 프롬프트**: 미번역 잔존·비문·용어 일관성 확인, 수정 불가 시 `[RETRANSLATE]` 마킹
-- **재시도 로직**: `[RETRANSLATE]` 블록은 원문 재번역 후 재검토 (최대 2회)
+- **재시도 로직**: `[RETRANSLATE]` 블록은 원문 재번역 후 재검토 (최대 `MAX_RETRIES`회)
 - **개별 재번역**: `/retranslate/{job_id}` — 에디터에서 요구사항 지정 가능
 - API 키 미설정 시 `ConfigError`, 호출 실패 시 `TranslationError`/`ReviewError`
 
 ### ffmpeg (services/encoding.py)
 - libass 필요: `brew tap homebrew-ffmpeg/ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-libass`
-- 번인 옵션: `libx264 -crf 18 -preset fast -movflags +faststart`
-- 자막 스타일: Arial, 20pt, 흰색 텍스트, 검정 외곽선
+- 번인 옵션: `libx264 -crf {FFMPEG_CRF} -preset {FFMPEG_PRESET} -movflags +faststart`
+- 자막 스타일: `FFMPEG_SUBTITLE_STYLE` (기본: Arial, 20pt, 흰색 텍스트, 검정 외곽선)
 - `-movflags +faststart` 필수: 없으면 moov atom 손상으로 파일 재생 불가
 - 실패 시 `EncodeError` (stderr 요약 포함)
 
@@ -170,10 +199,14 @@ POST /encode/{job_id}
 - 검증 실패 시 400 + 문제 블록 번호 반환 (최대 5건)
 
 ### 파일 관리
-- 임시 파일: `uploads/{job_id}.*` — 인코딩 성공 시에만 삭제
+- 임시 파일: `uploads/{job_id}.*` — 인코딩 성공 시에만 삭제 (`cleanup_job_files()`)
 - 인코딩 실패 시 파일 유지 (자막 수정 후 재시도 가능)
 - 출력 파일: `outputs/{job_id}.mp4` — 영구 보관
 - job 메타데이터: `jobs/{job_id}.json` — 서버 재시작 시 복원용
+- 서버 시작 시 `cleanup_stale()` 실행:
+  - `STALE_DAYS` 초과 error job 자동 삭제
+  - 복원 불가 job 메타데이터 삭제
+  - `ORPHAN_HOURS` 초과 orphan 파일 (job에 속하지 않는 uploads/) 삭제
 
 ### SRT 파싱 (utils/srt.py → parse_srt)
 - `re.split(r'\n{2,}', content)` 블록 분리 방식 사용

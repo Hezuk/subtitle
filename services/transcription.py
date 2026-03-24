@@ -1,4 +1,5 @@
 import whisper
+from config import WHISPER_MODEL, WHISPER_LANGUAGE, WHISPER_FP16
 from utils.log import get_logger
 from utils.errors import TranscriptionError
 
@@ -6,13 +7,13 @@ log = get_logger("transcription")
 _model = None
 
 
-def transcribe(input_path: str, language: str = "ko") -> dict:
+def transcribe(input_path: str, language: str | None = None) -> dict:
     """Whisper로 음성 인식. 모델은 첫 호출 시 로드 후 재사용."""
     global _model
     if _model is None:
-        log.info("Whisper 모델 로딩 시작 (large-v3-turbo)")
+        log.info("Whisper 모델 로딩 시작 (%s)", WHISPER_MODEL)
         try:
-            _model = whisper.load_model("large-v3-turbo")
+            _model = whisper.load_model(WHISPER_MODEL)
         except Exception as e:
             log.error("Whisper 모델 로딩 실패: %s", e, exc_info=True)
             raise TranscriptionError(
@@ -21,9 +22,10 @@ def transcribe(input_path: str, language: str = "ko") -> dict:
             ) from e
         log.info("Whisper 모델 로딩 완료")
 
-    log.info("음성 인식 시작: %s", input_path)
+    lang = language or WHISPER_LANGUAGE
+    log.info("음성 인식 시작: %s (language=%s)", input_path, lang)
     try:
-        result = _model.transcribe(input_path, fp16=False, language=language)
+        result = _model.transcribe(input_path, fp16=WHISPER_FP16, language=lang)
     except Exception as e:
         log.error("음성 인식 실패: %s", e, exc_info=True)
         raise TranscriptionError(detail=str(e)) from e

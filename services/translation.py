@@ -1,26 +1,27 @@
-import os, re
+import re
 import requests
+from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TIMEOUT, GEMINI_RETRANSLATE_TIMEOUT
 from utils.srt import wrap_subtitle
 from utils.log import get_logger
 from utils.errors import ConfigError, TranslationError, ReviewError
 
 log = get_logger("translation")
 
-GEMINI_MODEL = "gemini-3-flash-preview"
 _API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 
 def _get_api_key() -> str:
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
+    if not GEMINI_API_KEY:
         raise ConfigError(
             detail="GEMINI_API_KEY 환경변수 없음",
             user_message="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.",
         )
-    return key
+    return GEMINI_API_KEY
 
 
-def _call_gemini(prompt: str, timeout: int = 300) -> str:
+def _call_gemini(prompt: str, timeout: int | None = None) -> str:
+    if timeout is None:
+        timeout = GEMINI_TIMEOUT
     resp = requests.post(
         f"{_API_URL}?key={_get_api_key()}",
         json={"contents": [{"parts": [{"text": prompt}]}]},
@@ -128,7 +129,7 @@ def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> 
         "- Return ONLY the translated text, nothing else\n"
     )
     try:
-        result = _call_gemini(prompt, timeout=60).strip()
+        result = _call_gemini(prompt, timeout=GEMINI_RETRANSLATE_TIMEOUT).strip()
     except Exception as e:
         if isinstance(e, (ConfigError, TranslationError)):
             raise

@@ -19,6 +19,8 @@
 - **SRT 내보내기/가져오기**: 영어·한국어·동시 SRT 다운로드 및 외부 SRT 가져오기
 - **작업 상태 영속화**: 서버 재시작 후에도 완료된 작업 다운로드, 대기 중인 작업 재시도 가능
 - **인코딩 실패 복구**: 인코딩 실패 시 파일 유지, 자막 수정 후 재시도 가능
+- **자동 파일 정리**: 오래된 에러 작업과 orphan 파일을 서버 시작 시 자동 정리
+- **설정값 분리**: 모델명, 타임아웃, 제한값 등 모든 설정을 `.env`로 관리
 
 ## 설치 방법 (Mac)
 
@@ -34,7 +36,7 @@ git clone https://github.com/Hezuk/subtitle.git
 cd subtitle
 pip install -r requirements.txt
 cp .env.example .env
-# .env 파일에 GEMINI_API_KEY 입력
+# .env 파일에 GEMINI_API_KEY 입력 (그 외 설정은 선택사항, 기본값 있음)
 ```
 
 ### 실행
@@ -63,7 +65,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 subtitle/
 ├── main.py                  ← FastAPI 라우트 + 파이프라인 오케스트레이션
-├── config.py                ← 경로 상수
+├── config.py                ← 전역 설정 (.env에서 로드)
 ├── store/jobs.py            ← job 상태 관리 (메모리 + JSON 디스크 영속화)
 ├── utils/
 │   ├── srt.py               ← SRT 파싱/변환, 블록 검증
@@ -77,6 +79,26 @@ subtitle/
 ├── player.html              ← 팝업 플레이어
 └── editor.html              ← 팝업 에디터
 ```
+
+## 설정 항목
+
+`.env` 파일에서 설정 가능. `GEMINI_API_KEY`만 필수이며 나머지는 기본값이 있어 생략 가능합니다.
+
+| 카테고리 | 환경변수 | 기본값 | 설명 |
+|---------|---------|--------|------|
+| API | `GEMINI_API_KEY` | (필수) | Gemini API 키 |
+| API | `GEMINI_MODEL` | `gemini-3-flash-preview` | Gemini 모델명 |
+| API | `GEMINI_TIMEOUT` | `300` | API 타임아웃 (초) |
+| Whisper | `WHISPER_MODEL` | `large-v3-turbo` | 음성인식 모델 |
+| Whisper | `WHISPER_LANGUAGE` | `ko` | 음성인식 언어 |
+| ffmpeg | `FFMPEG_SUBTITLE_STYLE` | `FontName=Arial,...` | ASS 자막 스타일 |
+| ffmpeg | `FFMPEG_CRF` | `18` | 인코딩 품질 (낮을수록 고화질) |
+| ffmpeg | `FFMPEG_PRESET` | `fast` | 인코딩 속도 |
+| 업로드 | `MAX_UPLOAD_MB` | `4096` | 최대 업로드 크기 (MB) |
+| 자막 | `MAX_SUBTITLE_CHARS` | `42` | 줄 자동 분할 기준 글자 수 |
+| 파이프라인 | `MAX_RETRIES` | `2` | QA 재번역 최대 횟수 |
+
+전체 목록은 `.env.example` 참조.
 
 ## 사용 기술
 
