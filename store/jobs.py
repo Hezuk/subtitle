@@ -46,11 +46,11 @@ def restore_jobs():
             srt_ok = (UPLOADS / f"{job_id}_en.srt").exists()
             if input_ok and srt_ok:
                 jobs[job_id] = job
-        elif status in ("queued", "transcribing", "translating", "encoding"):
+        elif status in ("queued", "transcribing", "translating", "reviewing", "encoding"):
             job.update({"status": "error", "message": "❌ 서버 재시작으로 작업이 중단되었습니다."})
             jobs[job_id] = job
             save_job(job_id)
-        elif status == "error":
+        elif status in ("error", "cancelled"):
             jobs[job_id] = job
 
 
@@ -105,10 +105,10 @@ def cleanup_stale():
     stale_cutoff = now - STALE_DAYS * 86400
     orphan_cutoff = now - ORPHAN_HOURS * 3600
 
-    # 1. 오래된 error job 삭제 (STALE_DAYS 초과)
+    # 1. 오래된 error/cancelled job 삭제 (STALE_DAYS 초과)
     for p in list(JOBS_DIR.glob("*.json")):
         job_id = p.stem
-        if job_id in jobs and jobs[job_id].get("status") == "error":
+        if job_id in jobs and jobs[job_id].get("status") in ("error", "cancelled"):
             if p.stat().st_mtime < stale_cutoff:
                 log.info("오래된 error job 삭제: %s", job_id)
                 delete_job(job_id)

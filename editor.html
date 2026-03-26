@@ -351,9 +351,9 @@
     <div id="empty-msg">자막을 불러오는 중...</div>
   </div>
 
+  <script src="/shared.js"></script>
   <script>
-    const params = new URLSearchParams(location.search);
-    const jobId  = params.get('job_id');
+    const jobId = getJobId();
 
     const blockList   = document.getElementById('block-list');
     const searchInput = document.getElementById('search-input');
@@ -382,12 +382,10 @@
     async function load() {
       if (!jobId) { document.getElementById('empty-msg').textContent = 'job_id가 없습니다.'; return; }
       try {
-        const [resEn, resKo] = await Promise.all([
-          fetch(`/subtitles/${jobId}`),
-          fetch(`/subtitles_ko/${jobId}`),
+        const [dataEn, dataKo] = await Promise.all([
+          api(`/subtitles/${jobId}`),
+          api(`/subtitles_ko/${jobId}`),
         ]);
-        const dataEn = await resEn.json();
-        const dataKo = await resKo.json();
         enBlocks = dataEn.blocks || [];
         koBlocks = dataKo.blocks || [];
         origEn = JSON.parse(JSON.stringify(enBlocks));
@@ -495,12 +493,9 @@
           goBtn.disabled = true;
           goBtn.textContent = '번역 중...';
           try {
-            const res = await fetch(`/retranslate/${jobId}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ idx: block.idx, requirement: reqInput.value.trim() }),
+            const data = await apiPost(`/retranslate/${jobId}`, {
+              idx: block.idx, requirement: reqInput.value.trim(),
             });
-            const data = await res.json();
             if (data.text) {
               ta.value = data.text;
               autoResize(ta);
@@ -580,34 +575,18 @@
       try {
         const tasks = [];
         if (lang === 'en' || lang === 'both') {
-          tasks.push(fetch(`/subtitles/${jobId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ blocks: enBlocks }),
-          }));
+          tasks.push(apiPost(`/subtitles/${jobId}`, { blocks: enBlocks }));
         }
         if (lang === 'ko' || lang === 'both') {
-          tasks.push(fetch(`/subtitles_ko/${jobId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ blocks: koBlocks }),
-          }));
+          tasks.push(apiPost(`/subtitles_ko/${jobId}`, { blocks: koBlocks }));
         }
-        const results = await Promise.all(tasks);
-        // 서버 검증 실패 확인
-        for (const res of results) {
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(body.error || '저장 실패');
-          }
-        }
+        await Promise.all(tasks);
         saveStatus.className = 'saved';
         saveStatus.textContent = '✓ 저장됨';
-        // 같은 job의 모든 창(player, index)에 자막 갱신 알림
-        try { new BroadcastChannel(`subtitle-${jobId}`).postMessage('subtitle_updated'); } catch {}
+        broadcastSubtitleUpdated(jobId);
         // fallback: opener가 있으면 기존 방식도 유지
         if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ type: 'subtitle_updated' }, '*');
+          window.opener.postMessage({ type: MSG.SUBTITLE_UPDATED }, '*');
         }
         setTimeout(() => { saveStatus.textContent = ''; saveStatus.className = ''; }, 2000);
       } catch (err) {
@@ -764,7 +743,7 @@
 
     // ── 플레이어에서 갱신 요청 ──
     window.addEventListener('message', e => {
-      if (e.data?.type === 'reload_subtitles') load();
+      if (e.data?.type === MSG.RELOAD_SUBTITLE || e.data?.type === 'reload_subtitles') load();
     });
 
     load();

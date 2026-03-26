@@ -7,7 +7,7 @@ log = get_logger("transcription")
 _model = None
 
 
-def transcribe(input_path: str, language: str | None = None) -> dict:
+def transcribe(input_path: str, language: str | None = None, on_model_ready=None) -> dict:
     """Whisper로 음성 인식. 모델은 첫 호출 시 로드 후 재사용."""
     global _model
     if _model is None:
@@ -21,6 +21,8 @@ def transcribe(input_path: str, language: str | None = None) -> dict:
                 user_message="음성 인식 모델 로딩에 실패했습니다. 디스크 공간과 메모리를 확인해주세요.",
             ) from e
         log.info("Whisper 모델 로딩 완료")
+    if on_model_ready:
+        on_model_ready()
 
     lang = language or WHISPER_LANGUAGE
     log.info("음성 인식 시작: %s (language=%s)", input_path, lang)

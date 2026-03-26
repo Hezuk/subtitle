@@ -167,6 +167,18 @@
       text-align: center;
     }
 
+    #cancel-btn {
+      display: none;
+      background: transparent;
+      color: #f87171;
+      border: 1px solid rgba(248,113,113,.3);
+      font-size: .85rem;
+      padding: .55rem;
+      margin-top: .5rem;
+    }
+    #cancel-btn:hover:not(:disabled) { background: rgba(248,113,113,.08); border-color: #f87171; }
+    #cancel-btn:disabled { opacity: .4; cursor: not-allowed; }
+
     #encode-btn {
       display: none;
       background: linear-gradient(135deg, #818cf8, #6366f1);
@@ -241,6 +253,7 @@
     </div>
 
     <button id="upload-btn" disabled>자막 생성 시작</button>
+    <button id="cancel-btn">취소</button>
     <button id="open-player-btn" style="display:none">🎬 플레이어 창 열기</button>
 
     <!-- Progress -->
@@ -252,6 +265,7 @@
       <div class="steps">
         <div class="step" id="step-transcribe">🎤 음성인식</div>
         <div class="step" id="step-translate">🌍 번역</div>
+        <div class="step" id="step-review">🔍 검토</div>
         <div class="step" id="step-encode">🎬 인코딩</div>
         <div class="step" id="step-done">✅ 완료</div>
       </div>
@@ -267,6 +281,7 @@
     <a class="reset-link" id="reset-link" style="display:none" onclick="resetUI()">새 파일 처리하기</a>
   </div>
 
+  <script src="/shared.js"></script>
   <script>
     const fileInput    = document.getElementById('file-input');
     const fileInput2   = document.getElementById('file-input2');
@@ -281,22 +296,15 @@
     const progressFill = document.getElementById('progress-fill');
     const reviewBadge  = document.getElementById('review-badge');
     const editBtn      = document.getElementById('edit-btn');
+    const cancelBtn    = document.getElementById('cancel-btn');
     const encodeBtn    = document.getElementById('encode-btn');
     const doneBadge    = document.getElementById('done-badge');
     const downloadBtn  = document.getElementById('download-btn');
     const errorBox     = document.getElementById('error-box');
     const resetLink    = document.getElementById('reset-link');
 
-    const steps = {
-      transcribing:    'step-transcribe',
-      translating:     'step-translate',
-      ready_to_encode: 'step-encode',
-      encoding:        'step-encode',
-      done:            'step-done',
-    };
-
     let currentJobId = null;
-    let pollTimer    = null;
+    let poller       = null;
     let playerWindow = null;
     let playerOpened = false;
 
@@ -307,11 +315,8 @@
         const left = Math.round(screen.width / 2 - w / 2);
         const top  = Math.round(screen.height / 2 - h / 2);
         const url = currentJobId ? `/player?job_id=${currentJobId}` : '/player';
-        playerWindow = window.open(
-          url,
-          'videoPlayer',
-          `width=${w},height=${h},left=${left},top=${top},resizable=yes`
-        );
+        playerWindow = window.open(url, 'videoPlayer',
+          `width=${w},height=${h},left=${left},top=${top},resizable=yes`);
       } else {
         playerWindow.focus();
       }
@@ -331,6 +336,16 @@
     fileInput2.addEventListener('change', () => { if (fileInput2.files[0]) setFile(fileInput2.files[0]); });
 
     function setFile(file) {
+      const ext = file.name.includes('.') ? '.' + file.name.split('.').pop().toLowerCase() : '';
+      if (!UPLOAD.ALLOWED_EXTS.includes(ext)) {
+        showError(`지원하지 않는 형식입니다. (${UPLOAD.ALLOWED_EXTS.join(', ')})`);
+        return;
+      }
+      if (file.size > UPLOAD.MAX_MB * 1024 * 1024) {
+        showError(`파일이 너무 큽니다. (최대 ${UPLOAD.MAX_MB}MB)`);
+        return;
+      }
+
       uploadBtn._file     = file;
       uploadBtn._filename = file.name;
       uploadBtn.disabled  = false;
@@ -353,12 +368,11 @@
       const form = new FormData();
       form.append('file', file);
       try {
-        const res  = await fetch('/upload', { method: 'POST', body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+        const data = await api('/upload', { method: 'POST', body: form });
         currentJobId = data.job_id;
         setupBroadcast(currentJobId);
-        pollStatus();
+        poller = createPoller(currentJobId, updateUI);
+        poller.start();
       } catch (err) {
         showError(err.message);
         uploadBtn.disabled    = false;
@@ -366,60 +380,48 @@
       }
     });
 
-    function pollStatus() {
-      pollTimer = setTimeout(async () => {
-        try {
-          const res  = await fetch(`/status/${currentJobId}`);
-          const data = await res.json();
-          updateUI(data);
-          if (!['done', 'error'].includes(data.status)) pollStatus();
-        } catch { pollStatus(); }
-      }, 2000);
-    }
-
     function updateUI(data) {
-      const elapsed = data.elapsed ? ` (${data.elapsed} 경과)` : '';
-      statusMsg.textContent    = (data.message || data.status) + elapsed;
+      statusMsg.textContent    = fmtStatus(data);
       const pct = data.progress ?? guessProgress(data.status);
       progressFill.style.width = pct + '%';
 
-      Object.entries(steps).forEach(([st, id]) => {
-        const el    = document.getElementById(id);
+      // 단계 표시 업데이트
+      const order = Object.keys(STEP_MAP);
+      const cur   = order.indexOf(data.status);
+      Object.entries(STEP_MAP).forEach(([st, id]) => {
+        const el   = document.getElementById(id);
+        const mine = order.indexOf(st);
         el.className = 'step';
-        const order = Object.keys(steps);
-        const cur   = order.indexOf(data.status);
-        const mine  = order.indexOf(st);
         if (mine < cur)   el.classList.add('done');
         if (mine === cur) el.classList.add('active');
       });
 
-      if (data.status === 'ready_to_encode') {
+      // 취소 버튼: 진행 중일 때만 표시
+      const inProgress = !TERMINAL.has(data.status) && data.status !== STATUS.READY_TO_ENCODE;
+      cancelBtn.style.display = inProgress ? 'block' : 'none';
+
+      if (data.status === STATUS.READY_TO_ENCODE) {
         uploadBtn.style.display   = 'none';
         reviewBadge.style.display = 'block';
         editBtn.style.display     = 'block';
         encodeBtn.disabled        = false;
         encodeBtn.textContent     = '자막 번인';
         encodeBtn.style.display   = 'block';
-        // 인코딩 실패 메시지가 있으면 에러 박스에 표시
-        if (data.message && data.message.includes('인코딩 실패')) {
-          showError(data.message);
-        }
-        // 번역 완료 시 플레이어 창 열기 (처음 한 번만)
+        if (data.message && data.message.includes('인코딩 실패')) showError(data.message);
         if (!playerOpened) { playerOpened = true; openPlayer(); }
       }
 
-      if (data.status === 'encoding') {
+      if (data.status === STATUS.ENCODING) {
         reviewBadge.style.display = 'none';
         editBtn.style.display     = 'none';
         encodeBtn.style.display   = 'none';
       }
 
-      if (data.status === 'done') {
+      if (data.status === STATUS.DONE) {
         document.getElementById('step-done').classList.add('done');
         doneBadge.style.display   = 'block';
         downloadBtn.style.display = 'block';
         resetLink.style.display   = 'block';
-        // 완성 영상 플레이어로 열기 (한 번만)
         if (!playerOpened) { playerOpened = true; openPlayer(); }
 
         const filename = uploadBtn._filename || 'video.mp4';
@@ -431,17 +433,17 @@
         };
       }
 
-      if (data.status === 'error') {
-        showError(data.message);
+      if (data.status === STATUS.ERROR || data.status === STATUS.CANCELLED) {
+        if (data.status === STATUS.ERROR) showError(data.message);
         resetLink.style.display = 'block';
         uploadBtn.disabled      = false;
-        uploadBtn.textContent   = '다시 시도';
+        uploadBtn.textContent   = '새 파일 처리';
         uploadBtn.style.display = 'block';
       }
     }
 
     function guessProgress(status) {
-      return { queued: 5, transcribing: 20, translating: 60, ready_to_encode: 80, encoding: 92, done: 100 }[status] ?? 0;
+      return { queued: 2, transcribing: 8, translating: 35, reviewing: 60, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
     }
 
     // 편집 창 열기
@@ -452,41 +454,47 @@
       const left = Math.round(screen.width / 2 - w / 2);
       const top  = Math.round(screen.height / 2 - h / 2);
       if (!editorWindow || editorWindow.closed) {
-        editorWindow = window.open(
-          `/editor?job_id=${currentJobId}`,
-          'subtitleEditor',
-          `width=${w},height=${h},left=${left},top=${top},resizable=yes`
-        );
+        editorWindow = window.open(`/editor?job_id=${currentJobId}`, 'subtitleEditor',
+          `width=${w},height=${h},left=${left},top=${top},resizable=yes`);
       } else {
         editorWindow.focus();
       }
     });
 
-    // 편집 창에서 저장 시 플레이어 자막 갱신 (postMessage fallback)
+    // postMessage fallback: editor → index → player
     window.addEventListener('message', (e) => {
-      if (e.data?.type === 'subtitle_updated' && playerWindow && !playerWindow.closed) {
-        playerWindow.postMessage({ type: 'reload_subtitle' }, '*');
+      if (e.data?.type === MSG.SUBTITLE_UPDATED && playerWindow && !playerWindow.closed) {
+        playerWindow.postMessage({ type: MSG.RELOAD_SUBTITLE }, '*');
       }
     });
 
-    // BroadcastChannel: job별 자막 갱신 수신 → player에 중계
+    // BroadcastChannel: 자막 갱신 수신 → player에 중계
     function setupBroadcast(jobId) {
-      try {
-        const bc = new BroadcastChannel(`subtitle-${jobId}`);
-        bc.onmessage = () => {
-          if (playerWindow && !playerWindow.closed) {
-            playerWindow.postMessage({ type: 'reload_subtitle' }, '*');
-          }
-        };
-      } catch {}
+      onSubtitleBroadcast(jobId, () => {
+        if (playerWindow && !playerWindow.closed) {
+          playerWindow.postMessage({ type: MSG.RELOAD_SUBTITLE }, '*');
+        }
+      });
     }
+
+    cancelBtn.addEventListener('click', async () => {
+      if (!currentJobId) return;
+      cancelBtn.disabled    = true;
+      cancelBtn.textContent = '취소 중...';
+      try {
+        await api(`/cancel/${currentJobId}`, { method: 'POST' });
+      } catch (err) {
+        showError(err.message);
+      }
+    });
 
     encodeBtn.addEventListener('click', async () => {
       encodeBtn.disabled    = true;
       encodeBtn.textContent = '번인 중...';
       reviewBadge.style.display = 'none';
-      await fetch(`/encode/${currentJobId}`, { method: 'POST' });
-      pollStatus();
+      await api(`/encode/${currentJobId}`, { method: 'POST' });
+      poller = createPoller(currentJobId, updateUI);
+      poller.start();
     });
 
     function showError(msg) {
@@ -495,7 +503,7 @@
     }
 
     function resetUI() {
-      clearTimeout(pollTimer);
+      if (poller) poller.stop();
       currentJobId = null;
       playerOpened = false;
       if (playerWindow && !playerWindow.closed) playerWindow.close();
@@ -514,6 +522,9 @@
       progressSec.style.display   = 'none';
       reviewBadge.style.display   = 'none';
       editBtn.style.display       = 'none';
+      cancelBtn.style.display     = 'none';
+      cancelBtn.disabled          = false;
+      cancelBtn.textContent       = '취소';
       encodeBtn.style.display     = 'none';
       encodeBtn.disabled          = false;
       encodeBtn.textContent       = '🎬 번인 시작';
@@ -525,7 +536,7 @@
       progressFill.style.width = '0%';
       statusMsg.textContent    = '처리 중...';
 
-      Object.values(steps).forEach(id => {
+      Object.values(STEP_MAP).forEach(id => {
         document.getElementById(id).className = 'step';
       });
       fileInput.value  = '';

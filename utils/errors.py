@@ -1,6 +1,11 @@
 """에러 분류 및 사용자 메시지 매핑."""
 
 
+class CancelledError(Exception):
+    """사용자가 작업을 취소했을 때 발생."""
+    pass
+
+
 class SubtitleError(Exception):
     """모든 자막 앱 예외의 기반 클래스."""
     user_message = "알 수 없는 오류가 발생했습니다."

@@ -249,6 +249,7 @@
     </div>
   </div>
 
+  <script src="/shared.js"></script>
   <script>
     const video        = document.getElementById('preview-video');
     const waitingMsg   = document.getElementById('waiting-msg');
@@ -262,8 +263,7 @@
     const volIcon      = document.getElementById('vol-icon');
     const statusLabel  = document.getElementById('status-label');
 
-    let jobId      = null;
-    let pollTimer  = null;
+    const jobId = getJobId();
     let lastStatus = null;
     let editorWin  = null;
 
@@ -277,30 +277,22 @@
     btnEdit.addEventListener('mouseover', () => { btnEdit.style.borderColor='#818cf8'; btnEdit.style.color='#818cf8'; });
     btnEdit.addEventListener('mouseout',  () => { btnEdit.style.borderColor='#2d3148'; btnEdit.style.color='#94a3b8'; });
 
-    // ── URL 파라미터에서 job_id 읽기 ──
-    const params = new URLSearchParams(window.location.search);
-    const urlJobId = params.get('job_id');
-    if (urlJobId) {
-      jobId = urlJobId;
-      fetch(`/status/${jobId}`)
-        .then(r => r.json())
+    // ── 초기 상태 조회 + 폴링 ──
+    const poller = jobId ? createPoller(jobId, handleStatus) : null;
+    if (jobId) {
+      api(`/status/${jobId}`)
         .then(d => {
           handleStatus(d);
-          if (!['done', 'error'].includes(d.status)) pollStatus();
+          if (!TERMINAL.has(d.status)) poller.start();
         })
-        .catch(() => pollStatus());
+        .catch(() => poller.start());
     }
 
     // ── 자막 갱신 수신 (BroadcastChannel + postMessage fallback) ──
-    if (jobId) {
-      try {
-        const bc = new BroadcastChannel(`subtitle-${jobId}`);
-        bc.onmessage = () => reloadSubtitleTrack();
-      } catch {}
-    }
+    if (jobId) onSubtitleBroadcast(jobId, () => reloadSubtitleTrack());
     window.addEventListener('message', (e) => {
       const { type } = e.data || {};
-      if ((type === 'reload_subtitle' || type === 'subtitle_updated') && jobId) {
+      if ((type === MSG.RELOAD_SUBTITLE || type === MSG.SUBTITLE_UPDATED) && jobId) {
         reloadSubtitleTrack();
       }
     });
@@ -317,51 +309,28 @@
       btnPlay.textContent = '▶';
     }
 
-    function pollStatus() {
-      if (!jobId) return;
-      pollTimer = setTimeout(async () => {
-        try {
-          const res  = await fetch(`/status/${jobId}`);
-          const data = await res.json();
-          handleStatus(data);
-          if (!['done', 'error'].includes(data.status)) pollStatus();
-        } catch { pollStatus(); }
-      }, 2000);
-    }
-
     function handleStatus(data) {
-      const labels = {
-        queued:          '대기 중...',
-        transcribing:    '🎤 음성 인식 중...',
-        translating:     '🌍 번역 및 품질 검토 중...',
-        ready_to_encode: '✅ 번역 완료 — 자막 미리보기',
-        dubbing:         '🎙️ 더빙 오디오 생성 중...',
-        encoding:        '🎬 번인 인코딩 중...',
-        done:            '✅ 완료',
-        error:           '❌ 오류',
-      };
-      const elapsed = data.elapsed ? ` (${data.elapsed} 경과)` : '';
-      statusLabel.textContent = (data.message || labels[data.status] || data.status) + elapsed;
+      statusLabel.textContent = fmtStatus(data);
 
       if (data.status === lastStatus) return;
       lastStatus = data.status;
 
-      if (data.status === 'ready_to_encode' || data.status === 'encoding') {
-        btnEdit.style.display = data.status === 'ready_to_encode' ? 'block' : 'none';
+      if (data.status === STATUS.READY_TO_ENCODE || data.status === STATUS.ENCODING) {
+        btnEdit.style.display = data.status === STATUS.READY_TO_ENCODE ? 'block' : 'none';
       }
 
-      if (data.status === 'ready_to_encode') {
+      if (data.status === STATUS.READY_TO_ENCODE) {
         loadVideo(`/original/${jobId}`);
         document.getElementById('lang-row').style.display = 'flex';
         applyLang(currentLang);
       }
 
-      if (data.status === 'encoding') {
+      if (data.status === STATUS.ENCODING) {
         document.getElementById('lang-row').style.display = 'none';
         [...video.querySelectorAll('track')].forEach(t => t.remove());
       }
 
-      if (data.status === 'done') {
+      if (data.status === STATUS.DONE) {
         video.pause();
         [...video.querySelectorAll('track')].forEach(t => t.remove());
         loadVideo(`/download/${jobId}`);

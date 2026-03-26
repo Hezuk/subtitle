@@ -40,7 +40,8 @@ subtitle/
 │   ├── transcription.py     ← Whisper 음성인식 (모델 lazy load)
 │   ├── translation.py       ← Gemini 번역/검토/재번역 (API 호출 캡슐화)
 │   └── encoding.py          ← ffmpeg 자막 번인
-├── index.html               ← 메인 페이지 (업로드, 상태 폴링, 다운로드)
+├── shared.js                ← 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼, 브로드캐스트)
+├── index.html               ← 메인 페이지 (업로드, 상태 폴링, 취소, 다운로드)
 ├── player.html              ← 팝업 플레이어 (영상 미리보기 + 자막 오버레이)
 ├── editor.html              ← 팝업 에디터 (자막 편집, 재번역, SRT 가져오기/내보내기)
 ├── 설치.bat / 실행.bat       ← Windows 설치/실행 스크립트
@@ -75,10 +76,12 @@ POST /encode/{job_id}
 
 ### Job state machine
 
-`queued → transcribing → translating → ready_to_encode → encoding → done`
+`queued → transcribing → translating → reviewing → ready_to_encode → encoding → done`
 
 - 인코딩 실패 시 `ready_to_encode`로 복원 (파일 유지, 재시도 가능)
 - 파이프라인 실패 시 `error` (임시 파일 삭제)
+- 사용자 취소 시 `cancelled` (임시 파일 삭제)
+- `POST /cancel/{job_id}`: 진행 중 작업 취소 (ffmpeg은 0.5초 내 프로세스 종료)
 
 ### Job persistence (store/jobs.py)
 
@@ -96,7 +99,9 @@ POST /encode/{job_id}
 |-------|-------------|
 | `status` | 현재 상태 |
 | `message` | 단계별 상세 메시지 (소요 시간 포함) |
-| `progress` | 0~100 진행률 |
+| `progress` | 0~100 범위 기반 진행률 (단계별 구간: 음성인식 0~30, 번역 30~55, 검토 55~78, 인코딩 82~98) |
+| `phase` | 현재 대단계 (transcribe, translate, review, encode, done) |
+| `subphase` | 세부 단계 (model_loading, transcribing, translating, reviewing, retranslating, encoding, ...) |
 | `elapsed` | 현재 단계 경과 시간 (진행 중일 때만, e.g. "1분 23초") |
 | `timings` | 각 단계 소요 시간 dict (완료 후) |
 
@@ -111,6 +116,7 @@ POST /encode/{job_id}
 | GET | `/status/{job_id}` | job 상태 폴링 |
 | GET | `/original/{job_id}` | 원본 영상 서빙 (player 미리보기용) |
 | POST | `/encode/{job_id}` | 번인 시작 (ready_to_encode 상태에서만) |
+| POST | `/cancel/{job_id}` | 진행 중 작업 취소 |
 | GET | `/download/{job_id}` | 완성 영상 다운로드 |
 | GET | `/subtitle/{job_id}` | 영어 자막 WebVTT |
 | GET | `/subtitle_ko/{job_id}` | 한국어 자막 WebVTT |
@@ -120,6 +126,7 @@ POST /encode/{job_id}
 | GET | `/subtitles_ko/{job_id}` | 한국어 자막 블록 JSON (편집용) |
 | POST | `/subtitles_ko/{job_id}` | 한국어 자막 저장 (블록 검증 포함) |
 | POST | `/retranslate/{job_id}` | 개별 자막 블록 재번역 (에디터용) |
+| GET | `/shared.js` | 프론트엔드 공통 JS 모듈 |
 
 ---
 
@@ -175,19 +182,22 @@ POST /encode/{job_id}
 - 번인 옵션: `libx264 -crf {FFMPEG_CRF} -preset {FFMPEG_PRESET} -movflags +faststart`
 - 자막 스타일: `FFMPEG_SUBTITLE_STYLE` (기본: Arial, 20pt, 흰색 텍스트, 검정 외곽선)
 - `-movflags +faststart` 필수: 없으면 moov atom 손상으로 파일 재생 불가
+- `subprocess.Popen` + 0.5초 폴링으로 실행 (취소/타임아웃 시 프로세스 즉시 종료)
+- `cancel_check` 콜백 지원: True 반환 시 `CancelledError` 발생
 - 실패 시 `EncodeError` (stderr 요약 포함)
 
 ### 에러 체계 (utils/errors.py)
 
 | 예외 | 발생 위치 | 사용자 메시지 |
 |------|----------|-------------|
+| `CancelledError` | 사용자 취소 | (별도 처리) |
 | `ConfigError` | API 키 미설정 | 서버 설정 오류 |
 | `TranscriptionError` | Whisper 모델/실행 | 음성 인식 실패 |
 | `TranslationError` | Gemini 번역 API | 번역 실패 |
 | `ReviewError` | Gemini 검토 API | 검토 실패 |
 | `EncodeError` | ffmpeg 실행 | 인코딩 실패 |
 
-모든 예외는 `SubtitleError` 기반. `detail`(로그용)과 `user_message`(사용자 표시용)를 분리.
+`CancelledError`는 독립 예외. 나머지는 `SubtitleError` 기반 (`detail`(로그용) + `user_message`(사용자 표시용) 분리).
 
 ### 로깅 (utils/log.py)
 - `subtitle.*` 네임스페이스 구조화 로거 (stderr 출력)
@@ -199,12 +209,12 @@ POST /encode/{job_id}
 - 검증 실패 시 400 + 문제 블록 번호 반환 (최대 5건)
 
 ### 파일 관리
-- 임시 파일: `uploads/{job_id}.*` — 인코딩 성공 시에만 삭제 (`cleanup_job_files()`)
+- 임시 파일: `uploads/{job_id}.*` — 인코딩 성공 또는 취소 시 삭제 (`cleanup_job_files()`)
 - 인코딩 실패 시 파일 유지 (자막 수정 후 재시도 가능)
 - 출력 파일: `outputs/{job_id}.mp4` — 영구 보관
 - job 메타데이터: `jobs/{job_id}.json` — 서버 재시작 시 복원용
 - 서버 시작 시 `cleanup_stale()` 실행:
-  - `STALE_DAYS` 초과 error job 자동 삭제
+  - `STALE_DAYS` 초과 error/cancelled job 자동 삭제
   - 복원 불가 job 메타데이터 삭제
   - `ORPHAN_HOURS` 초과 orphan 파일 (job에 속하지 않는 uploads/) 삭제
 
@@ -214,7 +224,16 @@ POST /encode/{job_id}
 
 ---
 
-## Frontend 통신 구조
+## Frontend 구조
+
+### shared.js — 공통 유틸리티
+- `STATUS`, `TERMINAL`, `STATUS_LABELS`, `STEP_MAP`, `MSG` — 상태/메시지 상수
+- `UPLOAD` — 업로드 제한값 (MAX_MB, ALLOWED_EXTS)
+- `getJobId()` — URL 파라미터에서 job_id 추출
+- `api()`, `apiPost()` — fetch 래퍼 (응답 파싱 + 에러 처리)
+- `createPoller(jobId, onUpdate)` — 상태 폴링 (start/stop 제어)
+- `fmtStatus(data)` — 상태 메시지 + 경과 시간 포맷
+- `onSubtitleBroadcast()`, `broadcastSubtitleUpdated()` — BroadcastChannel 송수신
 
 ### 창 간 자막 동기화 (BroadcastChannel)
 - `BroadcastChannel('subtitle-{jobId}')` 기반 — 어떤 창 조합에서도 동작
