@@ -229,6 +229,7 @@ POST /encode/{job_id}
 ### shared.js — 공통 유틸리티
 - `STATUS`, `TERMINAL`, `STATUS_LABELS`, `STEP_MAP`, `MSG` — 상태/메시지 상수
 - `UPLOAD` — 업로드 제한값 (MAX_MB, ALLOWED_EXTS)
+- `LABELS` — UI 문자열 상수 (버튼, 에러, 상태 메시지 — 다국어 대응 준비)
 - `getJobId()` — URL 파라미터에서 job_id 추출
 - `api()`, `apiPost()` — fetch 래퍼 (응답 파싱 + 에러 처리)
 - `createPoller(jobId, onUpdate)` — 상태 폴링 (start/stop 제어)
@@ -253,6 +254,7 @@ POST /encode/{job_id}
 - `ready_to_encode` 도달 시 `/original/{job_id}` 로드 + 자막 언어 선택 행 표시
 - `done` 도달 시 `/download/{job_id}` 로드
 - 배속: `0.5x / 1x / 1.5x / 2x / 3x`
+- 스페이스바로 재생/일시정지 (input/button 포커스 시 제외)
 - status 메시지에 경과 시간 표시 (폴링 2초마다 갱신)
 
 ### player.html 자동 오픈 시점
@@ -268,6 +270,22 @@ POST /encode/{job_id}
 - **내보내기**: 영어 SRT / 한국어 SRT / 한국어+영어 동시 SRT 다운로드
 - **가져오기**: 외부 .srt 파일을 영어 또는 한국어 자막으로 import
 - textarea 높이: DOM 삽입 후 일괄 autoResize (삽입 전 호출 시 scrollHeight=0 문제)
+- 재번역 실패 시 인라인 에러 표시 (alert 대신 `.inline-error` 요소, 5초 후 자동 제거)
+
+### 텍스트 일관성 (국제화 준비)
+- 모든 사용자 노출 텍스트는 한국어로 통일 (영문 브랜드명·기술 용어 제거)
+- 백엔드 API 에러 메시지도 한국어 (`"Not found"` → `"찾을 수 없습니다."`)
+- JS에서 참조하는 UI 문자열은 `shared.js`의 `LABELS` 상수로 중앙화
+- HTML 마크업의 정적 텍스트는 인라인 유지 (변경 빈도 낮음)
+
+### 접근성 (a11y)
+- `aria-live="polite"`: 상태 메시지 영역 (index, player, editor)
+- `role="alert"`: 에러 박스 (index)
+- `aria-label`: 주요 버튼, 슬라이더, 입력 필드
+- `:focus-visible` 키보드 포커스 스타일 (전 페이지)
+- 팝업 차단 시 인라인 안내 (`#popup-hint`) 표시 (index, player)
+- 처리 중 파일 입력 비활성화 (pointer-events + opacity)
+- 업로드/인코딩 버튼에 CSS 스피너 애니메이션
 
 ---
 

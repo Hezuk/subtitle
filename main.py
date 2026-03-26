@@ -102,14 +102,14 @@ async def status(job_id: str):
 async def subtitle_en(job_id: str):
     p = UPLOADS / f"{job_id}_en.srt"
     if not p.exists():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     return Response(content=srt_to_vtt(p), media_type="text/vtt")
 
 @app.get("/subtitle_ko/{job_id}")
 async def subtitle_ko(job_id: str):
     p = UPLOADS / f"{job_id}.srt"
     if not p.exists():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     return Response(content=srt_to_vtt(p), media_type="text/vtt")
 
 @app.get("/subtitle_combined/{job_id}")
@@ -117,7 +117,7 @@ async def subtitle_combined(job_id: str):
     ko_path = UPLOADS / f"{job_id}.srt"
     en_path = UPLOADS / f"{job_id}_en.srt"
     if not ko_path.exists() or not en_path.exists():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     ko_blocks = parse_srt(ko_path.read_text(encoding="utf-8"))
     en_blocks = parse_srt(en_path.read_text(encoding="utf-8"))
     en_map = {b["idx"]: b["text"] for b in en_blocks}
@@ -142,14 +142,14 @@ def _check_blocks_limits(blocks: list) -> str | None:
 async def get_subtitles(job_id: str):
     blocks = load_blocks(UPLOADS / f"{job_id}_en.srt")
     if blocks is None:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     return {"blocks": blocks}
 
 @app.post("/subtitles/{job_id}")
 async def save_subtitles(job_id: str, payload: dict):
     path = UPLOADS / f"{job_id}_en.srt"
     if not path.exists():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     blocks = payload.get("blocks", [])
     for check in (_check_blocks_limits, validate_blocks):
         err = check(blocks)
@@ -162,14 +162,14 @@ async def save_subtitles(job_id: str, payload: dict):
 async def get_subtitles_ko(job_id: str):
     blocks = load_blocks(UPLOADS / f"{job_id}.srt")
     if blocks is None:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     return {"blocks": blocks}
 
 @app.post("/subtitles_ko/{job_id}")
 async def save_subtitles_ko(job_id: str, payload: dict):
     path = UPLOADS / f"{job_id}.srt"
     if not path.exists():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "자막을 찾을 수 없습니다."}, status_code=404)
     blocks = payload.get("blocks", [])
     for check in (_check_blocks_limits, validate_blocks):
         err = check(blocks)
@@ -185,7 +185,7 @@ async def original_video(job_id: str):
     job = load_job(job_id) or {}
     input_path = job.get("input_path")
     if not input_path or not Path(input_path).exists():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        return JSONResponse({"error": "원본 영상을 찾을 수 없습니다."}, status_code=404)
     return FileResponse(input_path, media_type="video/mp4")
 
 
@@ -194,7 +194,7 @@ async def original_video(job_id: str):
 async def encode(job_id: str):
     job = load_job(job_id) or {}
     if job.get("status") != "ready_to_encode":
-        return JSONResponse({"error": "Not ready"}, status_code=400)
+        return JSONResponse({"error": "준비되지 않은 상태입니다."}, status_code=400)
     jobs[job_id].update({
         "status": "encoding",
         "message": "🎬 자막 인코딩 중...",
@@ -236,10 +236,10 @@ async def retranslate(job_id: str, payload: dict):
 
     ko_blocks = load_blocks(UPLOADS / f"{job_id}.srt")
     if ko_blocks is None:
-        return JSONResponse({"error": "Korean SRT not found"}, status_code=404)
+        return JSONResponse({"error": "한국어 자막을 찾을 수 없습니다."}, status_code=404)
     ko_block = next((b for b in ko_blocks if b["idx"] == idx), None)
     if not ko_block:
-        return JSONResponse({"error": "Block not found"}, status_code=404)
+        return JSONResponse({"error": "해당 블록을 찾을 수 없습니다."}, status_code=404)
 
     en_blocks = load_blocks(UPLOADS / f"{job_id}_en.srt") or []
     en_block = next((b for b in en_blocks if b["idx"] == idx), None)
@@ -254,10 +254,10 @@ async def retranslate(job_id: str, payload: dict):
 async def download(job_id: str):
     job = load_job(job_id) or {}
     if job.get("status") != "done":
-        return JSONResponse({"error": "Not ready"}, status_code=400)
+        return JSONResponse({"error": "준비되지 않은 상태입니다."}, status_code=400)
     output = job.get("output", "")
     if not output or not Path(output).exists():
-        return JSONResponse({"error": "File not found"}, status_code=404)
+        return JSONResponse({"error": "파일을 찾을 수 없습니다."}, status_code=404)
     return FileResponse(
         output,
         filename="subtitled_english.mp4",
@@ -296,7 +296,7 @@ def run_pipeline(job_id: str, input_path: str):
         t0 = time.time()
         jobs[job_id].update({
             "status": "transcribing",
-            "message": "🎤 Whisper 모델 준비 중...",
+            "message": "🎤 음성 인식 모델 준비 중...",
             "progress": 3,
             "phase": "transcribe",
             "subphase": "model_loading",
@@ -433,7 +433,7 @@ def run_pipeline(job_id: str, input_path: str):
 
     except Exception as e:
         log.error("job=%s 파이프라인 예기치 않은 오류: %s", job_id, e, exc_info=True)
-        jobs[job_id].update({"status": "error", "message": "❌ 예기치 않은 오류가 발생했습니다."})
+        jobs[job_id].update({"status": "error", "message": "❌ 예기치 않은 오류가 발생했습니다. 다시 시도해주세요."})
         save_job(job_id)
         cleanup_job_files(job_id)
 

@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Video Player</title>
+  <title>영상 플레이어</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -198,15 +198,37 @@
     }
     .speed-btn:hover { border-color: #818cf8; color: #818cf8; }
     .speed-btn.active { background: #818cf8; border-color: #818cf8; color: #fff; }
+
+    /* Focus styles */
+    button:focus-visible, .ctrl-btn:focus-visible, .lang-btn:focus-visible,
+    .speed-btn:focus-visible, input[type="range"]:focus-visible {
+      outline: 2px solid #818cf8;
+      outline-offset: 2px;
+    }
+
+    /* Popup hint */
+    #popup-hint {
+      display: none;
+      background: rgba(251,191,36,.08);
+      border: 1px solid rgba(251,191,36,.3);
+      border-radius: 8px;
+      padding: .5rem .8rem;
+      font-size: .75rem;
+      color: #fbbf24;
+      text-align: center;
+      margin: .5rem 1rem 0;
+    }
   </style>
 </head>
 <body>
 
   <div id="title-bar">
-    <h2>🎬 Video Player</h2>
+    <h2>🎬 영상 플레이어</h2>
     <button id="btn-edit" style="display:none; background:none; border:1px solid #2d3148; color:#94a3b8; font-size:.75rem; font-weight:600; padding:.3rem .7rem; border-radius:7px; cursor:pointer; transition:all .15s; width:auto; margin:0;">✏️ 자막 편집</button>
-    <span id="status-label">대기 중...</span>
+    <span id="status-label" aria-live="polite">대기 중...</span>
   </div>
+
+  <div id="popup-hint">팝업이 차단되었습니다. 브라우저에서 팝업을 허용해주세요.</div>
 
   <div id="video-area">
     <div id="waiting-msg">
@@ -219,17 +241,17 @@
   <div class="controls">
     <div class="seek-row">
       <span class="time-label" id="time-current">0:00</span>
-      <input type="range" id="seek-bar" value="0" min="0" step="0.1" />
+      <input type="range" id="seek-bar" value="0" min="0" step="0.1" aria-label="탐색" />
       <span class="time-label right" id="time-duration">0:00</span>
     </div>
     <div class="btn-row">
-      <button class="ctrl-btn" id="btn-back" title="10초 뒤로">⏪</button>
-      <button class="ctrl-btn play-btn" id="btn-play">▶</button>
-      <button class="ctrl-btn" id="btn-fwd" title="10초 앞으로">⏩</button>
+      <button class="ctrl-btn" id="btn-back" title="10초 뒤로" aria-label="10초 뒤로">⏪</button>
+      <button class="ctrl-btn play-btn" id="btn-play" aria-label="재생">▶</button>
+      <button class="ctrl-btn" id="btn-fwd" title="10초 앞으로" aria-label="10초 앞으로">⏩</button>
       <div class="spacer"></div>
       <div class="volume-row">
         <span class="vol-icon" id="vol-icon">🔊</span>
-        <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="1" />
+        <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="1" aria-label="볼륨" />
       </div>
     </div>
     <div class="lang-row" id="lang-row">
@@ -267,11 +289,20 @@
     let lastStatus = null;
     let editorWin  = null;
 
-    const btnEdit = document.getElementById('btn-edit');
+    const btnEdit   = document.getElementById('btn-edit');
+    const popupHint = document.getElementById('popup-hint');
     btnEdit.addEventListener('click', () => {
       if (!jobId) return;
       if (!editorWin || editorWin.closed) {
-        editorWin = window.open(`/editor?job_id=${jobId}`, 'subtitleEditor', 'width=720,height=800,resizable=yes');
+        const left = Math.round(screen.width / 2 - 360);
+        const top  = Math.round(screen.height / 2 - 400);
+        editorWin = window.open(`/editor?job_id=${jobId}`, 'subtitleEditor',
+          `width=720,height=800,left=${left},top=${top},resizable=yes`);
+        if (!editorWin || editorWin.closed) {
+          popupHint.style.display = 'block';
+        } else {
+          popupHint.style.display = 'none';
+        }
       } else { editorWin.focus(); }
     });
     btnEdit.addEventListener('mouseover', () => { btnEdit.style.borderColor='#818cf8'; btnEdit.style.color='#818cf8'; });
@@ -334,7 +365,7 @@
         video.pause();
         [...video.querySelectorAll('track')].forEach(t => t.remove());
         loadVideo(`/download/${jobId}`);
-        statusLabel.textContent = '✅ 자막 번인 완료';
+        statusLabel.textContent = LABELS.ENCODE_DONE;
       }
     }
 
@@ -355,9 +386,18 @@
 
     seekBar.addEventListener('input', () => { video.currentTime = seekBar.value; });
 
-    btnPlay.addEventListener('click', () => {
-      if (video.paused) { video.play(); btnPlay.textContent = '⏸'; }
-      else              { video.pause(); btnPlay.textContent = '▶'; }
+    function togglePlay() {
+      if (video.paused) { video.play(); btnPlay.textContent = '⏸'; btnPlay.setAttribute('aria-label', '일시정지'); }
+      else              { video.pause(); btnPlay.textContent = '▶'; btnPlay.setAttribute('aria-label', '재생'); }
+    }
+    btnPlay.addEventListener('click', togglePlay);
+
+    // 스페이스바 재생/일시정지
+    document.addEventListener('keydown', e => {
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        togglePlay();
+      }
     });
 
     btnBack.addEventListener('click', () => { video.currentTime = Math.max(0, video.currentTime - 10); });

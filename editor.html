@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>Subtitle Editor</title>
+  <title>자막 편집기</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -278,12 +278,29 @@
     }
     .retranslate-go:hover { background: #6366f1; }
     .retranslate-go:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Focus styles */
+    button:focus-visible, .hbtn:focus-visible, .lang-tab:focus-visible,
+    .toolbar-input:focus-visible, textarea:focus-visible,
+    .retranslate-req:focus-visible, .retranslate-go:focus-visible {
+      outline: 2px solid #818cf8;
+      outline-offset: 2px;
+    }
+
+    /* Inline error toast */
+    .inline-error {
+      font-size: .68rem;
+      color: #f87171;
+      margin-top: .2rem;
+      animation: fadeIn .2s;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   </style>
 </head>
 <body>
 
   <div id="header">
-    <h2>✏️ Subtitle Editor</h2>
+    <h2>✏️ 자막 편집기</h2>
 
     <div class="lang-group">
       <button class="lang-tab active-en" data-lang="en">🇺🇸 영어</button>
@@ -293,7 +310,7 @@
 
     <div class="spacer"></div>
 
-    <input class="toolbar-input" id="jump-input-h" type="number" min="1" placeholder="번호 이동" style="width:90px;" />
+    <input class="toolbar-input" id="jump-input-h" type="number" min="1" placeholder="번호 이동" style="width:90px;" aria-label="블록 번호로 이동" />
     <button class="hbtn" id="btn-reset">되돌리기</button>
 
     <div class="export-wrap">
@@ -339,11 +356,11 @@
     </div>
 
     <button class="hbtn primary" id="btn-save">저장 (Ctrl+S)</button>
-    <span id="save-status"></span>
+    <span id="save-status" aria-live="polite"></span>
   </div>
 
   <div id="toolbar">
-    <input class="toolbar-input" id="search-input" type="text" placeholder="🔍 자막 검색..." />
+    <input class="toolbar-input" id="search-input" type="text" placeholder="🔍 자막 검색..." aria-label="자막 검색" />
     <span id="match-count"></span>
   </div>
 
@@ -380,7 +397,7 @@
 
     // ── 로드 ──
     async function load() {
-      if (!jobId) { document.getElementById('empty-msg').textContent = 'job_id가 없습니다.'; return; }
+      if (!jobId) { document.getElementById('empty-msg').textContent = LABELS.INVALID_ACCESS; return; }
       try {
         const [dataEn, dataKo] = await Promise.all([
           api(`/subtitles/${jobId}`),
@@ -392,7 +409,7 @@
         origKo = JSON.parse(JSON.stringify(koBlocks));
         render(enBlocks, koBlocks);
       } catch (e) {
-        document.getElementById('empty-msg').textContent = '불러오기 실패: ' + e.message;
+        document.getElementById('empty-msg').textContent = LABELS.LOAD_FAILED + ': ' + e.message;
       }
     }
 
@@ -401,7 +418,7 @@
       blockList.innerHTML = '';
       const list = lang === 'ko' ? koList : enList;
       if (!list.length) {
-        blockList.innerHTML = '<div id="empty-msg">자막이 없습니다.</div>';
+        blockList.innerHTML = `<div id="empty-msg">${LABELS.NO_SUBTITLES}</div>`;
         return;
       }
 
@@ -446,7 +463,7 @@
 
       const label = document.createElement('div');
       label.className = `field-label ${type}`;
-      label.textContent = type === 'en' ? '🇺🇸 English' : '🇰🇷 한국어';
+      label.textContent = type === 'en' ? '🇺🇸 영어' : '🇰🇷 한국어';
       if (lang !== 'both') label.style.display = 'none';
 
       const ta = document.createElement('textarea');
@@ -477,7 +494,7 @@
 
         const goBtn = document.createElement('button');
         goBtn.className = 'retranslate-go';
-        goBtn.textContent = '번역';
+        goBtn.textContent = LABELS.TRANSLATE;
 
         panel.appendChild(reqInput);
         panel.appendChild(goBtn);
@@ -491,7 +508,7 @@
 
         const doRetranslate = async () => {
           goBtn.disabled = true;
-          goBtn.textContent = '번역 중...';
+          goBtn.textContent = LABELS.TRANSLATING;
           try {
             const data = await apiPost(`/retranslate/${jobId}`, {
               idx: block.idx, requirement: reqInput.value.trim(),
@@ -506,10 +523,14 @@
               reqInput.value = '';
             }
           } catch (e) {
-            alert('재번역 실패: ' + e.message);
+            // 인라인 에러 표시 (alert 대신)
+            let errEl = panel.querySelector('.inline-error');
+            if (!errEl) { errEl = document.createElement('div'); errEl.className = 'inline-error'; panel.appendChild(errEl); }
+            errEl.textContent = LABELS.RETRANSLATE_FAILED + ': ' + e.message;
+            setTimeout(() => errEl.remove(), 5000);
           } finally {
             goBtn.disabled = false;
-            goBtn.textContent = '번역';
+            goBtn.textContent = LABELS.TRANSLATE;
           }
         };
 
@@ -556,8 +577,8 @@
       const max   = Math.max(...lines.map(l => l.length));
       el.className = 'char-count' + (max > 50 ? ' over' : max > 42 ? ' warn' : '');
       el.textContent = lines.length > 1
-        ? lines.map(l => l.length).join(' / ') + ' chars'
-        : max + ' chars';
+        ? lines.map(l => l.length).join(' / ') + LABELS.CHAR_UNIT
+        : max + LABELS.CHAR_UNIT;
     }
 
     function fmtTime(t) {
@@ -571,7 +592,7 @@
     async function save() {
       btnSave.disabled = true;
       saveStatus.className = 'saving';
-      saveStatus.textContent = '저장 중...';
+      saveStatus.textContent = LABELS.SAVING;
       try {
         const tasks = [];
         if (lang === 'en' || lang === 'both') {
@@ -582,7 +603,7 @@
         }
         await Promise.all(tasks);
         saveStatus.className = 'saved';
-        saveStatus.textContent = '✓ 저장됨';
+        saveStatus.textContent = LABELS.SAVED;
         broadcastSubtitleUpdated(jobId);
         // fallback: opener가 있으면 기존 방식도 유지
         if (window.opener && !window.opener.closed) {
@@ -591,7 +612,7 @@
         setTimeout(() => { saveStatus.textContent = ''; saveStatus.className = ''; }, 2000);
       } catch (err) {
         saveStatus.className = 'error';
-        saveStatus.textContent = err.message || '저장 실패';
+        saveStatus.textContent = err.message || LABELS.SAVE_FAILED;
       } finally {
         btnSave.disabled = false;
       }
@@ -599,7 +620,7 @@
 
     // ── 되돌리기 ──
     btnReset.addEventListener('click', () => {
-      if (!confirm('편집 내용을 되돌리시겠습니까?')) return;
+      if (!confirm(LABELS.RESET_CONFIRM)) return;
       enBlocks = JSON.parse(JSON.stringify(origEn));
       koBlocks = JSON.parse(JSON.stringify(origKo));
       applySearch(searchInput.value.trim());
@@ -668,7 +689,7 @@
       const reader = new FileReader();
       reader.onload = (e) => {
         const parsed = parseSRT(e.target.result);
-        if (!parsed.length) { alert('SRT 파싱 실패: 올바른 형식의 .srt 파일인지 확인해주세요.'); return; }
+        if (!parsed.length) { alert(LABELS.IMPORT_PARSE_ERROR); return; }
         if (importTarget === 'en') {
           enBlocks = parsed;
         } else {

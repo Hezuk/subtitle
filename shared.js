@@ -49,6 +49,40 @@ const UPLOAD = Object.freeze({
   ALLOWED_EXTS: ['.mp4','.mkv','.mov','.avi','.webm','.flv','.wmv','.m4v'],
 });
 
+// ── UI 라벨 (다국어 대응 준비) ────────────────────────────────────────────────
+const LABELS = Object.freeze({
+  // 공통
+  PROCESSING:         '처리 중...',
+  // 업로드
+  START:              '자막 생성 시작',
+  UPLOADING:          '업로드 중...',
+  NEW_FILE:           '새 파일 처리',
+  UNSUPPORTED_FMT:    '지원하지 않는 형식입니다.',
+  FILE_TOO_LARGE:     '파일이 너무 큽니다.',
+  CLICK_TO_CHANGE:    '클릭하여 변경',
+  // 취소
+  CANCEL:             '취소',
+  CANCELLING:         '취소 중...',
+  // 인코딩
+  ENCODE_START:       '🎬 번인 시작',
+  ENCODING:           '번인 중...',
+  ENCODE_DONE:        '✅ 자막 번인 완료',
+  // 에디터
+  TRANSLATE:          '번역',
+  TRANSLATING:        '번역 중...',
+  SAVING:             '저장 중...',
+  SAVED:              '✓ 저장됨',
+  SAVE_FAILED:        '저장 실패',
+  LOAD_FAILED:        '불러오기 실패',
+  RETRANSLATE_FAILED: '재번역 실패',
+  NO_SUBTITLES:       '자막이 없습니다.',
+  LOADING_SUBTITLES:  '자막을 불러오는 중...',
+  INVALID_ACCESS:     '잘못된 접근입니다.',
+  IMPORT_PARSE_ERROR: 'SRT 파싱 실패: 올바른 형식의 .srt 파일인지 확인해주세요.',
+  RESET_CONFIRM:      '편집 내용을 되돌리시겠습니까?',
+  CHAR_UNIT:          '자',
+});
+
 // ── URL 파라미터 ──────────────────────────────────────────────────────────────
 function getJobId() {
   return new URLSearchParams(location.search).get('job_id');
