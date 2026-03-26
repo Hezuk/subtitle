@@ -2,14 +2,15 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <title>자막 편집기</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0a0c12;
-      color: #e2e8f0;
+      font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: #09090b;
+      color: #fafafa;
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -17,8 +18,8 @@
 
     /* Header */
     #header {
-      background: #1a1d27;
-      border-bottom: 1px solid #2d3148;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
       padding: .55rem 1rem;
       display: flex;
       align-items: center;
@@ -27,18 +28,15 @@
       flex-wrap: wrap;
     }
     #header h2 {
-      font-size: .9rem;
+      font-size: .875rem;
       font-weight: 700;
-      background: linear-gradient(135deg, #818cf8, #38bdf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: #fafafa;
     }
 
     .hbtn {
       background: none;
-      border: 1px solid #2d3148;
-      color: #94a3b8;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
       font-size: .75rem;
       font-weight: 600;
       padding: .3rem .7rem;
@@ -53,55 +51,83 @@
     .hbtn.primary { background: #818cf8; border-color: #818cf8; color: #fff; }
     .hbtn.primary:hover { background: #6366f1; }
     .hbtn.primary:disabled { opacity: .5; cursor: not-allowed; }
-    .hbtn.export { border-color: #34d399; color: #34d399; position: relative; }
-    .hbtn.export:hover { background: rgba(52,211,153,.08); }
 
-    /* Export dropdown */
-    .export-wrap { position: relative; }
-    #export-menu {
+    /* Overflow menu (⋯) */
+    .overflow-wrap { position: relative; }
+    .overflow-btn {
+      background: none;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      font-size: 1rem;
+      font-weight: 700;
+      width: 32px;
+      height: 28px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: 1px;
+    }
+    .overflow-btn:hover { border-color: #818cf8; color: #818cf8; }
+    #overflow-menu {
       display: none;
       position: absolute;
       top: calc(100% + 6px);
       right: 0;
-      background: #1a1d27;
-      border: 1px solid #2d3148;
+      background: #18181b;
+      border: 1px solid #27272a;
       border-radius: 10px;
       box-shadow: 0 8px 24px rgba(0,0,0,.5);
-      min-width: 190px;
+      min-width: 200px;
       z-index: 100;
       overflow: hidden;
     }
-    #export-menu.open { display: block; }
-    .export-item {
+    #overflow-menu.open { display: block; }
+    .menu-item {
       display: flex;
       align-items: center;
       gap: .6rem;
       padding: .65rem 1rem;
-      font-size: .8rem;
-      color: #94a3b8;
+      font-size: .875rem;
+      color: #a1a1aa;
       cursor: pointer;
       transition: background .12s;
-      border-bottom: 1px solid #1e2233;
+      border-bottom: 1px solid #1f1f23;
     }
-    .export-item:last-child { border-bottom: none; }
-    .export-item:hover { background: #1e2233; color: #e2e8f0; }
-    .export-item .ei-icon { font-size: 1rem; }
-    .export-item .ei-desc { font-size: .7rem; color: #4b5563; margin-top: .1rem; }
+    .menu-item:last-child { border-bottom: none; }
+    .menu-item:hover { background: #1f1f23; color: #fafafa; }
+    .menu-divider {
+      height: 1px;
+      background: #27272a;
+      margin: 0;
+    }
+    .menu-label {
+      font-size: .75rem;
+      color: #52525b;
+      padding: .45rem 1rem .2rem;
+      font-weight: 600;
+    }
+    .menu-item .mi-icon { font-size: .75rem; font-weight: 700; color: #71717a; flex-shrink: 0; min-width: 24px; text-align: center; }
+    .menu-item .mi-desc { font-size: .75rem; color: #52525b; margin-top: .1rem; }
+    .menu-item.danger { color: #f87171; }
+    .menu-item.danger:hover { background: rgba(248,113,113,.08); }
 
     /* Language selector */
     .lang-group {
       display: flex;
       gap: .25rem;
-      background: #0f1117;
-      border: 1px solid #2d3148;
+      background: #09090b;
+      border: 1px solid #27272a;
       border-radius: 8px;
       padding: .2rem;
     }
     .lang-tab {
       background: none;
       border: none;
-      color: #64748b;
-      font-size: .72rem;
+      color: #71717a;
+      font-size: .75rem;
       font-weight: 700;
       padding: .25rem .65rem;
       border-radius: 6px;
@@ -111,16 +137,16 @@
       width: auto;
       margin: 0;
     }
-    .lang-tab:hover { color: #94a3b8; }
+    .lang-tab:hover { color: #a1a1aa; }
     .lang-tab.active-en   { background: #818cf8; color: #fff; }
-    .lang-tab.active-ko   { background: #38bdf8; color: #0f1117; }
-    .lang-tab.active-both { background: linear-gradient(135deg,#818cf8,#38bdf8); color: #fff; }
+    .lang-tab.active-ko   { background: #38bdf8; color: #09090b; }
+    .lang-tab.active-both { background: #818cf8; color: #fff; }
 
     .spacer { flex: 1; }
 
     #save-status {
-      font-size: .72rem;
-      color: #64748b;
+      font-size: .75rem;
+      color: #71717a;
       min-width: 60px;
       text-align: right;
     }
@@ -130,8 +156,8 @@
 
     /* Search + jump */
     #toolbar {
-      background: #1a1d27;
-      border-bottom: 1px solid #2d3148;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
       padding: .45rem 1rem;
       display: flex;
       align-items: center;
@@ -139,20 +165,22 @@
       flex-shrink: 0;
     }
     .toolbar-input {
-      background: #0f1117;
-      border: 1px solid #2d3148;
+      background: #09090b;
+      border: 1px solid #27272a;
       border-radius: 7px;
-      color: #e2e8f0;
-      font-size: .8rem;
+      color: #fafafa;
+      font-size: .875rem;
       padding: .3rem .65rem;
       outline: none;
       transition: border-color .15s;
     }
     .toolbar-input:focus { border-color: #818cf8; }
-    .toolbar-input::placeholder { color: #374151; }
-    #search-input { flex: 1; }
-    #jump-input   { width: 100px; }
-    #match-count  { font-size: .72rem; color: #64748b; white-space: nowrap; }
+    .toolbar-input::placeholder { color: #52525b; }
+    #search-input  { flex: 1; }
+    #jump-input-h  { width: 90px; }
+    #match-count   { font-size: .75rem; color: #71717a; white-space: nowrap; }
+
+    .hidden { display: none !important; }
 
     /* Block list */
     #block-list {
@@ -170,7 +198,7 @@
       border: 1px solid transparent;
       transition: border-color .15s, background .15s;
     }
-    .block:hover   { background: #13161f; border-color: #2d3148; }
+    .block:hover   { background: #141416; border-color: #27272a; }
     .block.focused { border-color: #818cf8; background: rgba(129,140,248,.04); }
     .block.highlight { background: rgba(56,189,248,.05); border-color: rgba(56,189,248,.25); }
 
@@ -179,14 +207,14 @@
       text-align: right;
       min-width: 84px;
     }
-    .block-idx  { font-size: .68rem; color: #4b5563; font-weight: 700; margin-bottom: .15rem; }
-    .block-time { font-size: .62rem; color: #374151; line-height: 1.4; }
+    .block-idx  { font-size: .75rem; color: #52525b; font-weight: 700; margin-bottom: .15rem; }
+    .block-time { font-size: .75rem; color: #52525b; line-height: 1.4; }
 
     .block-fields { flex: 1; display: flex; flex-direction: column; gap: .3rem; }
 
     .field-wrap { position: relative; }
     .field-label {
-      font-size: .6rem;
+      font-size: .75rem;
       font-weight: 700;
       letter-spacing: .04em;
       margin-bottom: .15rem;
@@ -198,8 +226,8 @@
       width: 100%;
       background: transparent;
       border: none;
-      color: #e2e8f0;
-      font-size: .86rem;
+      color: #fafafa;
+      font-size: .875rem;
       line-height: 1.5;
       resize: none;
       outline: none;
@@ -207,12 +235,12 @@
       min-height: 1.5em;
       overflow: hidden;
     }
-    textarea.ko-ta { color: #94a3b8; }
-    textarea:focus { color: #f1f5f9; }
+    textarea.ko-ta { color: #a1a1aa; }
+    textarea:focus { color: #f4f4f5; }
 
     .char-count {
-      font-size: .62rem;
-      color: #374151;
+      font-size: .75rem;
+      color: #52525b;
       text-align: right;
     }
     .char-count.warn { color: #fbbf24; }
@@ -220,9 +248,9 @@
 
     #empty-msg {
       text-align: center;
-      color: #4b5563;
+      color: #52525b;
       padding: 4rem 1rem;
-      font-size: .9rem;
+      font-size: .875rem;
     }
 
     .retranslate-btn {
@@ -230,9 +258,9 @@
       top: 0;
       right: 0;
       background: none;
-      border: 1px solid #2d3148;
-      color: #4b5563;
-      font-size: .62rem;
+      border: 1px solid #27272a;
+      color: #52525b;
+      font-size: .75rem;
       padding: .15rem .4rem;
       border-radius: 5px;
       cursor: pointer;
@@ -251,22 +279,22 @@
     .retranslate-panel.open { display: flex; }
     .retranslate-req {
       flex: 1;
-      background: #0f1117;
-      border: 1px solid #2d3148;
+      background: #09090b;
+      border: 1px solid #27272a;
       border-radius: 6px;
-      color: #e2e8f0;
+      color: #fafafa;
       font-size: .75rem;
       padding: .25rem .5rem;
       outline: none;
       transition: border-color .15s;
     }
     .retranslate-req:focus { border-color: #818cf8; }
-    .retranslate-req::placeholder { color: #374151; }
+    .retranslate-req::placeholder { color: #52525b; }
     .retranslate-go {
       background: #818cf8;
       border: none;
       color: #fff;
-      font-size: .7rem;
+      font-size: .75rem;
       font-weight: 600;
       padding: .25rem .65rem;
       border-radius: 6px;
@@ -289,7 +317,7 @@
 
     /* Inline error toast */
     .inline-error {
-      font-size: .68rem;
+      font-size: .75rem;
       color: #f87171;
       margin-top: .2rem;
       animation: fadeIn .2s;
@@ -300,68 +328,58 @@
 <body>
 
   <div id="header">
-    <h2>✏️ 자막 편집기</h2>
+    <h2>자막 편집기</h2>
 
     <div class="lang-group">
-      <button class="lang-tab active-en" data-lang="en">🇺🇸 영어</button>
-      <button class="lang-tab" data-lang="ko">🇰🇷 한국어</button>
-      <button class="lang-tab" data-lang="both">동시</button>
+      <button class="lang-tab active-en" data-lang="en">EN</button>
+      <button class="lang-tab" data-lang="ko">KO</button>
+      <button class="lang-tab" data-lang="both">Both</button>
     </div>
 
     <div class="spacer"></div>
 
-    <input class="toolbar-input" id="jump-input-h" type="number" min="1" placeholder="번호 이동" style="width:90px;" aria-label="블록 번호로 이동" />
-    <button class="hbtn" id="btn-reset">되돌리기</button>
-
-    <div class="export-wrap">
-      <button class="hbtn export" id="btn-import" style="border-color:#fbbf24; color:#fbbf24;">📂 가져오기</button>
-      <div id="import-menu" style="display:none; position:absolute; top:calc(100% + 6px); right:0; background:#1a1d27; border:1px solid #2d3148; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.5); min-width:180px; z-index:100; overflow:hidden;">
-        <div class="export-item" data-import="en">
-          <span class="ei-icon">🇺🇸</span>
-          <div><div>영어 자막으로 가져오기</div><div class="ei-desc">.srt 파일 선택</div></div>
-        </div>
-        <div class="export-item" data-import="ko">
-          <span class="ei-icon">🇰🇷</span>
-          <div><div>한국어 자막으로 가져오기</div><div class="ei-desc">.srt 파일 선택</div></div>
-        </div>
-      </div>
-    </div>
-    <input type="file" id="import-file-input" accept=".srt" style="display:none" />
-
-    <div class="export-wrap">
-      <button class="hbtn export" id="btn-export">⬇️ 내보내기</button>
-      <div id="export-menu">
-        <div class="export-item" data-export="en">
-          <span class="ei-icon">🇺🇸</span>
-          <div>
-            <div>영어 자막</div>
-            <div class="ei-desc">subtitle_en.srt</div>
-          </div>
-        </div>
-        <div class="export-item" data-export="ko">
-          <span class="ei-icon">🇰🇷</span>
-          <div>
-            <div>한국어 자막</div>
-            <div class="ei-desc">subtitle_ko.srt</div>
-          </div>
-        </div>
-        <div class="export-item" data-export="both">
-          <span class="ei-icon">🌐</span>
-          <div>
-            <div>한국어 + 영어 동시</div>
-            <div class="ei-desc">subtitle_bilingual.srt</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <button class="hbtn primary" id="btn-save">저장 (Ctrl+S)</button>
     <span id="save-status" aria-live="polite"></span>
+
+    <div class="overflow-wrap">
+      <button class="overflow-btn" id="btn-overflow" aria-label="더보기 메뉴">⋯</button>
+      <div id="overflow-menu">
+        <div class="menu-label">가져오기</div>
+        <div class="menu-item" data-import="en">
+          <span class="mi-icon">EN</span>
+          <div><div>영어 자막으로 가져오기</div><div class="mi-desc">.srt 파일 선택</div></div>
+        </div>
+        <div class="menu-item" data-import="ko">
+          <span class="mi-icon">KO</span>
+          <div><div>한국어 자막으로 가져오기</div><div class="mi-desc">.srt 파일 선택</div></div>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-label">내보내기</div>
+        <div class="menu-item" data-export="en">
+          <span class="mi-icon">EN</span>
+          <div><div>영어 자막</div><div class="mi-desc">subtitle_en.srt</div></div>
+        </div>
+        <div class="menu-item" data-export="ko">
+          <span class="mi-icon">KO</span>
+          <div><div>한국어 자막</div><div class="mi-desc">subtitle_ko.srt</div></div>
+        </div>
+        <div class="menu-item" data-export="both">
+          <span class="mi-icon">All</span>
+          <div><div>한국어 + 영어 동시</div><div class="mi-desc">subtitle_bilingual.srt</div></div>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-item danger" id="btn-reset">
+          <div>되돌리기</div>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="import-file-input" accept=".srt" class="hidden" />
   </div>
 
   <div id="toolbar">
-    <input class="toolbar-input" id="search-input" type="text" placeholder="🔍 자막 검색..." aria-label="자막 검색" />
+    <input class="toolbar-input" id="search-input" type="text" placeholder="자막 검색..." aria-label="자막 검색" />
     <span id="match-count"></span>
+    <input class="toolbar-input" id="jump-input-h" type="number" min="1" placeholder="번호 이동" aria-label="블록 번호로 이동" />
   </div>
 
   <div id="block-list">
@@ -463,8 +481,8 @@
 
       const label = document.createElement('div');
       label.className = `field-label ${type}`;
-      label.textContent = type === 'en' ? '🇺🇸 영어' : '🇰🇷 한국어';
-      if (lang !== 'both') label.style.display = 'none';
+      label.textContent = type === 'en' ? 'EN' : 'KO';
+      if (lang !== 'both') label.classList.add('hidden');
 
       const ta = document.createElement('textarea');
       ta.className = type === 'ko' ? 'ko-ta' : '';
@@ -482,7 +500,7 @@
       if (type === 'en') {
         const rtBtn = document.createElement('button');
         rtBtn.className = 'retranslate-btn';
-        rtBtn.textContent = '🔄 재번역';
+        rtBtn.textContent = '재번역';
 
         const panel = document.createElement('div');
         panel.className = 'retranslate-panel';
@@ -620,6 +638,7 @@
 
     // ── 되돌리기 ──
     btnReset.addEventListener('click', () => {
+      overflowMenu.classList.remove('open');
       if (!confirm(LABELS.RESET_CONFIRM)) return;
       enBlocks = JSON.parse(JSON.stringify(origEn));
       koBlocks = JSON.parse(JSON.stringify(origKo));
@@ -660,24 +679,24 @@
       }
     });
 
-    // ── 가져오기 ──
-    const btnImport   = document.getElementById('btn-import');
-    const importMenu  = document.getElementById('import-menu');
-    const importInput = document.getElementById('import-file-input');
-    let importTarget  = 'en'; // 어떤 언어로 가져올지
+    // ── 더보기(⋯) 오버플로 메뉴 ──
+    const btnOverflow  = document.getElementById('btn-overflow');
+    const overflowMenu = document.getElementById('overflow-menu');
+    const importInput  = document.getElementById('import-file-input');
+    let importTarget   = 'en';
 
-    btnImport.addEventListener('click', (e) => {
+    btnOverflow.addEventListener('click', (e) => {
       e.stopPropagation();
-      importMenu.style.display = importMenu.style.display === 'block' ? 'none' : 'block';
-      exportMenu.classList.remove('open');
+      overflowMenu.classList.toggle('open');
     });
-    document.addEventListener('click', () => { importMenu.style.display = 'none'; });
+    document.addEventListener('click', () => overflowMenu.classList.remove('open'));
 
+    // 가져오기
     document.querySelectorAll('[data-import]').forEach(item => {
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         importTarget = item.dataset.import;
-        importMenu.style.display = 'none';
+        overflowMenu.classList.remove('open');
         importInput.value = '';
         importInput.click();
       });
@@ -708,25 +727,16 @@
       const pattern = /(\d+)\r?\n(\d{2}:\d{2}:\d{2}[,.]\d{3} --> \d{2}:\d{2}:\d{2}[,.]\d{3})\r?\n([\s\S]*?)(?=\r?\n\r?\n\d+\r?\n|$)/g;
       let m;
       while ((m = pattern.exec(text.trim())) !== null) {
-        const ts = m[2].replace(/\./g, ','); // VTT 점 → SRT 콤마 통일
+        const ts = m[2].replace(/\./g, ',');
         blocks.push({ idx: m[1], timestamp: ts, text: m[3].trim() });
       }
       return blocks;
     }
 
-    // ── 내보내기 ──
-    const btnExport  = document.getElementById('btn-export');
-    const exportMenu = document.getElementById('export-menu');
-
-    btnExport.addEventListener('click', (e) => {
-      e.stopPropagation();
-      exportMenu.classList.toggle('open');
-    });
-    document.addEventListener('click', () => exportMenu.classList.remove('open'));
-
-    document.querySelectorAll('.export-item').forEach(item => {
+    // 내보내기
+    document.querySelectorAll('[data-export]').forEach(item => {
       item.addEventListener('click', () => {
-        exportMenu.classList.remove('open');
+        overflowMenu.classList.remove('open');
         exportSRT(item.dataset.export);
       });
     });

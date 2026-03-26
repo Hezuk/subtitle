@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <title>영상 자막 생성기</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
+      font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: #09090b;
+      color: #fafafa;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -20,8 +21,8 @@
     }
 
     .card {
-      background: #1a1d27;
-      border: 1px solid #2d3148;
+      background: #18181b;
+      border: 1px solid #27272a;
       border-radius: 16px;
       padding: 2.5rem;
       width: 100%;
@@ -33,20 +34,17 @@
       font-size: 1.5rem;
       font-weight: 700;
       margin-bottom: .3rem;
-      background: linear-gradient(135deg, #818cf8, #38bdf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: #fafafa;
     }
     .subtitle {
-      font-size: .85rem;
-      color: #64748b;
+      font-size: .875rem;
+      color: #71717a;
       margin-bottom: 2rem;
     }
 
     /* Drop zone */
     #drop-zone {
-      border: 2px dashed #2d3148;
+      border: 2px dashed #27272a;
       border-radius: 12px;
       padding: 2.5rem 1.5rem;
       text-align: center;
@@ -63,15 +61,14 @@
     }
     .drop-icon { font-size: 2.5rem; margin-bottom: .75rem; }
     .drop-title { font-size: 1rem; font-weight: 600; margin-bottom: .3rem; }
-    .drop-hint { font-size: .8rem; color: #64748b; }
+    .drop-hint { font-size: .75rem; color: #71717a; }
 
     #file-bar {
-      display: none;
-      background: #1e2233;
-      border: 1px solid #2d3148;
+      background: #1f1f23;
+      border: 1px solid #27272a;
       border-radius: 10px;
       padding: .6rem .9rem;
-      font-size: .82rem;
+      font-size: .875rem;
       color: #818cf8;
       word-break: break-all;
       cursor: pointer;
@@ -83,7 +80,7 @@
       position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
     }
     #file-bar-name { margin-bottom: .1rem; font-weight: 600; }
-    #file-bar-size { color: #64748b; font-size: .75rem; }
+    #file-bar-size { color: #71717a; font-size: .75rem; }
 
     button {
       width: 100%;
@@ -98,40 +95,40 @@
     }
 
     #upload-btn {
-      background: linear-gradient(135deg, #818cf8, #38bdf8);
+      background: #818cf8;
       color: #fff;
     }
     #upload-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
     #upload-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 
     #open-player-btn {
-      background: #1e2233;
-      color: #94a3b8;
-      border: 1px solid #2d3148;
-      font-size: .85rem;
+      background: #1f1f23;
+      color: #a1a1aa;
+      border: 1px solid #27272a;
+      font-size: .875rem;
       padding: .6rem;
       margin-top: .6rem;
     }
     #open-player-btn:hover { border-color: #818cf8; color: #818cf8; }
 
     /* Progress */
-    #progress-section { display: none; margin-top: 1.25rem; }
+    #progress-section { margin-top: 1.25rem; }
     .status-msg {
-      font-size: .85rem;
-      color: #94a3b8;
+      font-size: .875rem;
+      color: #a1a1aa;
       margin-bottom: .6rem;
       min-height: 1.3em;
       text-align: center;
     }
     .progress-bar-bg {
-      background: #2d3148;
+      background: #27272a;
       border-radius: 99px;
       height: 6px;
       overflow: hidden;
     }
     .progress-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, #818cf8, #38bdf8);
+      background: #818cf8;
       border-radius: 99px;
       width: 0%;
       transition: width .4s ease;
@@ -145,34 +142,32 @@
     .step {
       flex: 1;
       text-align: center;
-      font-size: .65rem;
-      color: #374151;
+      font-size: .75rem;
+      color: #52525b;
       padding: .35rem .15rem;
       border-radius: 6px;
-      background: #1e2233;
+      background: #1f1f23;
       transition: all .3s;
     }
     .step.active { color: #818cf8; background: rgba(129,140,248,.12); }
     .step.done   { color: #34d399; background: rgba(52,211,153,.1); }
 
     #review-badge {
-      display: none;
       margin-top: 1rem;
       background: rgba(251,191,36,.08);
       border: 1px solid rgba(251,191,36,.3);
       border-radius: 10px;
       padding: .8rem 1rem;
-      font-size: .82rem;
+      font-size: .875rem;
       color: #fbbf24;
       text-align: center;
     }
 
     #cancel-btn {
-      display: none;
       background: transparent;
       color: #f87171;
       border: 1px solid rgba(248,113,113,.3);
-      font-size: .85rem;
+      font-size: .875rem;
       padding: .55rem;
       margin-top: .5rem;
     }
@@ -180,56 +175,61 @@
     #cancel-btn:disabled { opacity: .4; cursor: not-allowed; }
 
     #encode-btn {
-      display: none;
-      background: linear-gradient(135deg, #818cf8, #6366f1);
+      background: #818cf8;
       color: #fff;
     }
     #encode-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
     #encode-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
     #done-badge {
-      display: none;
       margin-top: 1rem;
       background: rgba(52,211,153,.08);
       border: 1px solid rgba(52,211,153,.3);
       border-radius: 10px;
       padding: .8rem 1rem;
       text-align: center;
-      font-size: .85rem;
+      font-size: .875rem;
       color: #34d399;
       font-weight: 700;
     }
 
     #download-btn {
-      display: none;
-      background: linear-gradient(135deg, #34d399, #059669);
-      color: #fff;
-      box-shadow: 0 4px 20px rgba(52,211,153,.3);
+      background: #34d399;
+      color: #09090b;
+      font-weight: 700;
     }
-    #download-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(52,211,153,.4); }
+    #download-btn:hover { opacity: .9; transform: translateY(-1px); }
 
     #error-box {
-      display: none;
       margin-top: 1rem;
       background: rgba(239,68,68,.1);
       border: 1px solid rgba(239,68,68,.3);
       border-radius: 10px;
       padding: 1rem;
-      font-size: .85rem;
+      font-size: .875rem;
       color: #fca5a5;
       word-break: break-word;
     }
 
     .reset-link {
-      display: block;
       text-align: center;
       margin-top: 1rem;
-      font-size: .8rem;
-      color: #64748b;
+      font-size: .75rem;
+      color: #71717a;
       cursor: pointer;
       text-decoration: underline;
     }
-    .reset-link:hover { color: #94a3b8; }
+    .reset-link:hover { color: #a1a1aa; }
+
+    #edit-btn {
+      background: #1f1f23;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      margin-top: .6rem;
+    }
+
+    .hidden { display: none !important; }
+    .file-bar-disabled { pointer-events: none; opacity: .5; }
 
     /* Focus styles */
     button:focus-visible, .reset-link:focus-visible, #drop-zone:focus-visible {
@@ -252,13 +252,12 @@
 
     /* Popup hint */
     #popup-hint {
-      display: none;
       margin-top: .6rem;
       background: rgba(251,191,36,.08);
       border: 1px solid rgba(251,191,36,.3);
       border-radius: 8px;
       padding: .6rem .8rem;
-      font-size: .78rem;
+      font-size: .75rem;
       color: #fbbf24;
       text-align: center;
     }
@@ -266,52 +265,52 @@
 </head>
 <body>
   <div class="card">
-    <h1>🎬 영상 자막 생성기</h1>
+    <h1>영상 자막 생성기</h1>
     <p class="subtitle">동영상을 업로드하면 영어 자막이 자동으로 삽입됩니다</p>
 
     <!-- Drop zone -->
     <div id="drop-zone">
       <input type="file" id="file-input" accept="video/*" />
-      <div class="drop-icon">📁</div>
+      <div class="drop-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
       <div class="drop-title">동영상 파일을 선택하거나 드래그하세요</div>
       <div class="drop-hint">mp4, mov, avi, mkv 등 지원</div>
     </div>
 
     <!-- File bar -->
-    <div id="file-bar">
+    <div id="file-bar" class="hidden">
       <input type="file" id="file-input2" accept="video/*" />
       <div id="file-bar-name"></div>
       <div id="file-bar-size"></div>
     </div>
 
     <button id="upload-btn" disabled aria-label="자막 생성 시작">자막 생성 시작</button>
-    <button id="cancel-btn" aria-label="작업 취소">취소</button>
-    <button id="open-player-btn" style="display:none" aria-label="플레이어 창 열기">🎬 플레이어 창 열기</button>
-    <div id="popup-hint">팝업이 차단되었습니다. 브라우저 주소창의 팝업 차단 아이콘을 클릭하여 허용해주세요.</div>
+    <button id="cancel-btn" class="hidden" aria-label="작업 취소">취소</button>
+    <button id="open-player-btn" class="hidden" aria-label="플레이어 창 열기">플레이어 창 열기</button>
+    <div id="popup-hint" class="hidden">팝업이 차단되었습니다. 브라우저 주소창의 팝업 차단 아이콘을 클릭하여 허용해주세요.</div>
 
     <!-- Progress -->
-    <div id="progress-section">
+    <div id="progress-section" class="hidden">
       <p class="status-msg" id="status-msg" aria-live="polite">처리 중...</p>
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" id="progress-fill"></div>
       </div>
       <div class="steps">
-        <div class="step" id="step-transcribe">🎤 음성인식</div>
-        <div class="step" id="step-translate">🌍 번역</div>
-        <div class="step" id="step-review">🔍 검토</div>
-        <div class="step" id="step-encode">🎬 인코딩</div>
-        <div class="step" id="step-done">✅ 완료</div>
+        <div class="step" id="step-transcribe">음성인식</div>
+        <div class="step" id="step-translate">번역</div>
+        <div class="step" id="step-review">검토</div>
+        <div class="step" id="step-encode">인코딩</div>
+        <div class="step" id="step-done">완료</div>
       </div>
     </div>
 
-    <div id="review-badge">👀 자막을 확인하고 필요하면 편집한 후 번인을 시작하세요</div>
-    <button id="edit-btn" style="display:none; background:#1e2233; border:1px solid #2d3148; color:#94a3b8; margin-top:.6rem;">✏️ 자막 편집</button>
-    <button id="encode-btn">🎬 번인 시작</button>
-    <div id="done-badge">🎉 영어 자막 생성 완료!</div>
-    <button id="download-btn">⬇️ 자막 영상 다운로드</button>
-    <div id="error-box" role="alert"></div>
+    <div id="review-badge" class="hidden">자막을 확인하고 필요하면 편집한 후 번인을 시작하세요</div>
+    <button id="edit-btn" class="hidden">자막 편집</button>
+    <button id="encode-btn" class="hidden">번인 시작</button>
+    <div id="done-badge" class="hidden">영어 자막 생성 완료!</div>
+    <button id="download-btn" class="hidden">자막 영상 다운로드</button>
+    <div id="error-box" class="hidden" role="alert"></div>
 
-    <a class="reset-link" id="reset-link" style="display:none" onclick="resetUI()">새 파일 처리</a>
+    <a class="reset-link hidden" id="reset-link" onclick="resetUI()">새 파일 처리</a>
   </div>
 
   <script src="/shared.js"></script>
@@ -342,6 +341,9 @@
     let playerWindow = null;
     let playerOpened = false;
 
+    function show(el) { el.classList.remove('hidden'); }
+    function hide(el) { el.classList.add('hidden'); }
+
     // ── 팝업 열기 헬퍼 ──
     function tryOpen(url, name, w, h) {
       const left = Math.round(screen.width / 2 - w / 2);
@@ -349,10 +351,10 @@
       const win = window.open(url, name,
         `width=${w},height=${h},left=${left},top=${top},resizable=yes`);
       if (!win || win.closed) {
-        popupHint.style.display = 'block';
+        show(popupHint);
         return null;
       }
-      popupHint.style.display = 'none';
+      hide(popupHint);
       return win;
     }
 
@@ -394,12 +396,12 @@
       uploadBtn._filename = file.name;
       uploadBtn.disabled  = false;
 
-      dropZone.style.display = 'none';
-      fileBar.style.display  = 'block';
-      fileBarName.textContent = `📎 ${file.name}`;
+      hide(dropZone);
+      show(fileBar);
+      fileBarName.textContent = file.name;
       fileBarSize.textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB — ${LABELS.CLICK_TO_CHANGE}`;
 
-      openPlayerBtn.style.display = 'block';
+      show(openPlayerBtn);
     }
 
     uploadBtn.addEventListener('click', async () => {
@@ -407,9 +409,8 @@
       if (!file) return;
       uploadBtn.disabled    = true;
       uploadBtn.innerHTML   = `<span class="spinner"></span>${LABELS.UPLOADING}`;
-      progressSec.style.display = 'block';
-      fileBar.style.pointerEvents = 'none';
-      fileBar.style.opacity = '.5';
+      show(progressSec);
+      fileBar.classList.add('file-bar-disabled');
 
       const form = new FormData();
       form.append('file', file);
@@ -444,30 +445,30 @@
 
       // 취소 버튼: 진행 중일 때만 표시
       const inProgress = !TERMINAL.has(data.status) && data.status !== STATUS.READY_TO_ENCODE;
-      cancelBtn.style.display = inProgress ? 'block' : 'none';
+      inProgress ? show(cancelBtn) : hide(cancelBtn);
 
       if (data.status === STATUS.READY_TO_ENCODE) {
-        uploadBtn.style.display   = 'none';
-        reviewBadge.style.display = 'block';
-        editBtn.style.display     = 'block';
-        encodeBtn.disabled        = false;
-        encodeBtn.textContent     = LABELS.ENCODE_START;
-        encodeBtn.style.display   = 'block';
+        hide(uploadBtn);
+        show(reviewBadge);
+        show(editBtn);
+        encodeBtn.disabled    = false;
+        encodeBtn.textContent = LABELS.ENCODE_START;
+        show(encodeBtn);
         if (data.message && data.message.includes('인코딩 실패')) showError(data.message);
         if (!playerOpened) { playerOpened = true; openPlayer(); }
       }
 
       if (data.status === STATUS.ENCODING) {
-        reviewBadge.style.display = 'none';
-        editBtn.style.display     = 'none';
-        encodeBtn.style.display   = 'none';
+        hide(reviewBadge);
+        hide(editBtn);
+        hide(encodeBtn);
       }
 
       if (data.status === STATUS.DONE) {
         document.getElementById('step-done').classList.add('done');
-        doneBadge.style.display   = 'block';
-        downloadBtn.style.display = 'block';
-        resetLink.style.display   = 'block';
+        show(doneBadge);
+        show(downloadBtn);
+        show(resetLink);
         if (!playerOpened) { playerOpened = true; openPlayer(); }
 
         const filename = uploadBtn._filename || 'video.mp4';
@@ -481,10 +482,10 @@
 
       if (data.status === STATUS.ERROR || data.status === STATUS.CANCELLED) {
         if (data.status === STATUS.ERROR) showError(data.message);
-        resetLink.style.display = 'block';
-        uploadBtn.disabled      = false;
-        uploadBtn.textContent   = LABELS.NEW_FILE;
-        uploadBtn.style.display = 'block';
+        show(resetLink);
+        uploadBtn.disabled    = false;
+        uploadBtn.textContent = LABELS.NEW_FILE;
+        show(uploadBtn);
       }
     }
 
@@ -533,24 +534,24 @@
     encodeBtn.addEventListener('click', async () => {
       encodeBtn.disabled    = true;
       encodeBtn.innerHTML   = `<span class="spinner"></span>${LABELS.ENCODING}`;
-      reviewBadge.style.display = 'none';
-      editBtn.style.display = 'none';
+      hide(reviewBadge);
+      hide(editBtn);
       try {
         await api(`/encode/${currentJobId}`, { method: 'POST' });
         poller = createPoller(currentJobId, updateUI);
         poller.start();
       } catch (err) {
         showError(err.message);
-        encodeBtn.disabled  = false;
+        encodeBtn.disabled    = false;
         encodeBtn.textContent = LABELS.ENCODE_START;
-        reviewBadge.style.display = 'block';
-        editBtn.style.display = 'block';
+        show(reviewBadge);
+        show(editBtn);
       }
     });
 
     function showError(msg) {
-      errorBox.style.display = 'block';
-      errorBox.textContent   = msg;
+      show(errorBox);
+      errorBox.textContent = msg;
     }
 
     function resetUI() {
@@ -565,27 +566,26 @@
       uploadBtn._file       = null;
       uploadBtn.disabled    = true;
       uploadBtn.textContent = LABELS.START;
-      uploadBtn.style.display = 'block';
+      show(uploadBtn);
 
-      dropZone.style.display        = 'block';
-      fileBar.style.display         = 'none';
-      fileBar.style.pointerEvents   = '';
-      fileBar.style.opacity         = '';
-      openPlayerBtn.style.display   = 'none';
-      popupHint.style.display       = 'none';
-      progressSec.style.display   = 'none';
-      reviewBadge.style.display   = 'none';
-      editBtn.style.display       = 'none';
-      cancelBtn.style.display     = 'none';
-      cancelBtn.disabled          = false;
-      cancelBtn.textContent       = LABELS.CANCEL;
-      encodeBtn.style.display     = 'none';
-      encodeBtn.disabled          = false;
-      encodeBtn.textContent       = LABELS.ENCODE_START;
-      doneBadge.style.display     = 'none';
-      downloadBtn.style.display   = 'none';
-      errorBox.style.display      = 'none';
-      resetLink.style.display     = 'none';
+      show(dropZone);
+      hide(fileBar);
+      fileBar.classList.remove('file-bar-disabled');
+      hide(openPlayerBtn);
+      hide(popupHint);
+      hide(progressSec);
+      hide(reviewBadge);
+      hide(editBtn);
+      hide(cancelBtn);
+      cancelBtn.disabled    = false;
+      cancelBtn.textContent = LABELS.CANCEL;
+      hide(encodeBtn);
+      encodeBtn.disabled    = false;
+      encodeBtn.textContent = LABELS.ENCODE_START;
+      hide(doneBadge);
+      hide(downloadBtn);
+      hide(errorBox);
+      hide(resetLink);
 
       progressFill.style.width = '0%';
       statusMsg.textContent    = LABELS.PROCESSING;

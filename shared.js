@@ -20,14 +20,14 @@ const TERMINAL = new Set([STATUS.DONE, STATUS.ERROR, STATUS.CANCELLED]);
 
 const STATUS_LABELS = Object.freeze({
   [STATUS.QUEUED]:          '대기 중...',
-  [STATUS.TRANSCRIBING]:    '🎤 음성 인식 중...',
-  [STATUS.TRANSLATING]:     '🌍 번역 중...',
-  [STATUS.REVIEWING]:       '🔍 번역 품질 검토 중...',
-  [STATUS.READY_TO_ENCODE]: '✅ 번역 완료',
-  [STATUS.ENCODING]:        '🎬 번인 인코딩 중...',
-  [STATUS.DONE]:            '✅ 완료',
-  [STATUS.ERROR]:           '❌ 오류',
-  [STATUS.CANCELLED]:       '🚫 취소됨',
+  [STATUS.TRANSCRIBING]:    '음성 인식 중...',
+  [STATUS.TRANSLATING]:     '번역 중...',
+  [STATUS.REVIEWING]:       '번역 품질 검토 중...',
+  [STATUS.READY_TO_ENCODE]: '번역 완료',
+  [STATUS.ENCODING]:        '번인 인코딩 중...',
+  [STATUS.DONE]:            '완료',
+  [STATUS.ERROR]:           '오류',
+  [STATUS.CANCELLED]:       '취소됨',
 });
 
 const STEP_MAP = Object.freeze({
@@ -64,9 +64,9 @@ const LABELS = Object.freeze({
   CANCEL:             '취소',
   CANCELLING:         '취소 중...',
   // 인코딩
-  ENCODE_START:       '🎬 번인 시작',
+  ENCODE_START:       '번인 시작',
   ENCODING:           '번인 중...',
-  ENCODE_DONE:        '✅ 자막 번인 완료',
+  ENCODE_DONE:        '자막 번인 완료',
   // 에디터
   TRANSLATE:          '번역',
   TRANSLATING:        '번역 중...',

@@ -2,22 +2,23 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <title>영상 플레이어</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0a0c12;
-      color: #e2e8f0;
+      font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: #09090b;
+      color: #fafafa;
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
 
     #title-bar {
-      background: #1a1d27;
-      border-bottom: 1px solid #2d3148;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
       padding: .5rem 1rem;
       display: flex;
       align-items: center;
@@ -25,20 +26,17 @@
       flex-shrink: 0;
     }
     #title-bar h2 {
-      font-size: .9rem;
+      font-size: .875rem;
       font-weight: 600;
-      background: linear-gradient(135deg, #818cf8, #38bdf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: #fafafa;
     }
     #status-label {
       font-size: .75rem;
-      color: #64748b;
-      background: #1e2233;
+      color: #71717a;
+      background: #1f1f23;
       padding: .25rem .7rem;
       border-radius: 99px;
-      border: 1px solid #2d3148;
+      border: 1px solid #27272a;
     }
 
     #video-area {
@@ -60,15 +58,15 @@
     #waiting-msg {
       position: absolute;
       text-align: center;
-      color: #64748b;
+      color: #71717a;
     }
     #waiting-msg .icon { font-size: 3rem; margin-bottom: .75rem; }
-    #waiting-msg p { font-size: .9rem; }
+    #waiting-msg p { font-size: .875rem; }
 
     /* Controls */
     .controls {
-      background: #111827;
-      border-top: 1px solid #1e2233;
+      background: #111113;
+      border-top: 1px solid #1f1f23;
       padding: .7rem 1rem;
       flex-shrink: 0;
     }
@@ -79,8 +77,8 @@
       margin-bottom: .5rem;
     }
     .time-label {
-      font-size: .72rem;
-      color: #64748b;
+      font-size: .75rem;
+      color: #71717a;
       white-space: nowrap;
       min-width: 40px;
     }
@@ -92,7 +90,7 @@
       flex: 1;
       height: 4px;
       border-radius: 99px;
-      background: #2d3148;
+      background: #27272a;
       outline: none;
       cursor: pointer;
     }
@@ -103,7 +101,6 @@
       border-radius: 50%;
       background: #818cf8;
       cursor: pointer;
-      box-shadow: 0 0 6px rgba(129,140,248,.6);
     }
     input[type="range"].volume-slider {
       height: 3px;
@@ -119,7 +116,7 @@
     .ctrl-btn {
       background: none;
       border: none;
-      color: #94a3b8;
+      color: #a1a1aa;
       font-size: 1.1rem;
       width: 36px;
       height: 36px;
@@ -132,7 +129,7 @@
       padding: 0;
       flex-shrink: 0;
     }
-    .ctrl-btn:hover { background: rgba(255,255,255,.08); color: #e2e8f0; }
+    .ctrl-btn:hover { background: rgba(255,255,255,.08); color: #fafafa; }
     .ctrl-btn.play-btn {
       background: #818cf8;
       color: #fff;
@@ -143,7 +140,7 @@
     .ctrl-btn.play-btn:hover { background: #6366f1; }
     .spacer { flex: 1; }
     .volume-row { display: flex; align-items: center; gap: .4rem; }
-    .vol-icon { font-size: .9rem; color: #64748b; cursor: pointer; }
+    .vol-icon { font-size: .875rem; color: #71717a; cursor: pointer; }
 
     /* Lang buttons */
     .lang-row {
@@ -152,12 +149,12 @@
       gap: .3rem;
       margin-top: .4rem;
     }
-    .lang-label { font-size: .7rem; color: #64748b; margin-right: .2rem; white-space: nowrap; }
+    .lang-label { font-size: .75rem; color: #71717a; margin-right: .2rem; white-space: nowrap; }
     .lang-btn {
-      background: #1e2233;
-      border: 1px solid #2d3148;
-      color: #94a3b8;
-      font-size: .72rem;
+      background: #1f1f23;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      font-size: .75rem;
       font-weight: 600;
       padding: .25rem .6rem;
       border-radius: 6px;
@@ -167,8 +164,7 @@
       width: auto;
     }
     .lang-btn:hover  { border-color: #38bdf8; color: #38bdf8; }
-    .lang-btn.active { background: #38bdf8; border-color: #38bdf8; color: #0f1117; }
-    #lang-row { display: none; }
+    .lang-btn.active { background: #38bdf8; border-color: #38bdf8; color: #09090b; }
 
     /* Speed buttons */
     .speed-row {
@@ -178,16 +174,16 @@
       margin-top: .5rem;
     }
     .speed-label {
-      font-size: .7rem;
-      color: #64748b;
+      font-size: .75rem;
+      color: #71717a;
       margin-right: .2rem;
       white-space: nowrap;
     }
     .speed-btn {
-      background: #1e2233;
-      border: 1px solid #2d3148;
-      color: #94a3b8;
-      font-size: .72rem;
+      background: #1f1f23;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      font-size: .75rem;
       font-weight: 600;
       padding: .25rem .55rem;
       border-radius: 6px;
@@ -206,9 +202,25 @@
       outline-offset: 2px;
     }
 
+    #btn-edit {
+      background: none;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      font-size: .75rem;
+      font-weight: 600;
+      padding: .3rem .7rem;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all .15s;
+      width: auto;
+      margin: 0;
+    }
+    #btn-edit:hover { border-color: #818cf8; color: #818cf8; }
+
+    .hidden { display: none !important; }
+
     /* Popup hint */
     #popup-hint {
-      display: none;
       background: rgba(251,191,36,.08);
       border: 1px solid rgba(251,191,36,.3);
       border-radius: 8px;
@@ -223,19 +235,19 @@
 <body>
 
   <div id="title-bar">
-    <h2>🎬 영상 플레이어</h2>
-    <button id="btn-edit" style="display:none; background:none; border:1px solid #2d3148; color:#94a3b8; font-size:.75rem; font-weight:600; padding:.3rem .7rem; border-radius:7px; cursor:pointer; transition:all .15s; width:auto; margin:0;">✏️ 자막 편집</button>
+    <h2>영상 플레이어</h2>
+    <button id="btn-edit" class="hidden">자막 편집</button>
     <span id="status-label" aria-live="polite">대기 중...</span>
   </div>
 
-  <div id="popup-hint">팝업이 차단되었습니다. 브라우저에서 팝업을 허용해주세요.</div>
+  <div id="popup-hint" class="hidden">팝업이 차단되었습니다. 브라우저에서 팝업을 허용해주세요.</div>
 
   <div id="video-area">
     <div id="waiting-msg">
-      <div class="icon">🎞️</div>
+      <div class="icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg></div>
       <p>영상을 불러오는 중...</p>
     </div>
-    <video id="preview-video" preload="metadata" style="display:none"></video>
+    <video id="preview-video" preload="metadata" class="hidden"></video>
   </div>
 
   <div class="controls">
@@ -250,11 +262,11 @@
       <button class="ctrl-btn" id="btn-fwd" title="10초 앞으로" aria-label="10초 앞으로">⏩</button>
       <div class="spacer"></div>
       <div class="volume-row">
-        <span class="vol-icon" id="vol-icon">🔊</span>
+        <span class="vol-icon" id="vol-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg></span>
         <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="1" aria-label="볼륨" />
       </div>
     </div>
-    <div class="lang-row" id="lang-row">
+    <div class="lang-row hidden" id="lang-row">
       <span class="lang-label">자막</span>
       <button class="lang-btn" data-lang="off">끄기</button>
       <button class="lang-btn active" data-lang="en">영어</button>
@@ -289,6 +301,9 @@
     let lastStatus = null;
     let editorWin  = null;
 
+    function show(el) { el.classList.remove('hidden'); }
+    function hide(el) { el.classList.add('hidden'); }
+
     const btnEdit   = document.getElementById('btn-edit');
     const popupHint = document.getElementById('popup-hint');
     btnEdit.addEventListener('click', () => {
@@ -299,14 +314,12 @@
         editorWin = window.open(`/editor?job_id=${jobId}`, 'subtitleEditor',
           `width=720,height=800,left=${left},top=${top},resizable=yes`);
         if (!editorWin || editorWin.closed) {
-          popupHint.style.display = 'block';
+          show(popupHint);
         } else {
-          popupHint.style.display = 'none';
+          hide(popupHint);
         }
       } else { editorWin.focus(); }
     });
-    btnEdit.addEventListener('mouseover', () => { btnEdit.style.borderColor='#818cf8'; btnEdit.style.color='#818cf8'; });
-    btnEdit.addEventListener('mouseout',  () => { btnEdit.style.borderColor='#2d3148'; btnEdit.style.color='#94a3b8'; });
 
     // ── 초기 상태 조회 + 폴링 ──
     const poller = jobId ? createPoller(jobId, handleStatus) : null;
@@ -335,10 +348,12 @@
     function loadVideo(src) {
       video.src = src;
       video.load();
-      video.style.display = 'block';
-      waitingMsg.style.display = 'none';
+      show(video);
+      hide(waitingMsg);
       btnPlay.textContent = '▶';
     }
+
+    const langRow = document.getElementById('lang-row');
 
     function handleStatus(data) {
       statusLabel.textContent = fmtStatus(data);
@@ -347,17 +362,17 @@
       lastStatus = data.status;
 
       if (data.status === STATUS.READY_TO_ENCODE || data.status === STATUS.ENCODING) {
-        btnEdit.style.display = data.status === STATUS.READY_TO_ENCODE ? 'block' : 'none';
+        data.status === STATUS.READY_TO_ENCODE ? show(btnEdit) : hide(btnEdit);
       }
 
       if (data.status === STATUS.READY_TO_ENCODE) {
         loadVideo(`/original/${jobId}`);
-        document.getElementById('lang-row').style.display = 'flex';
+        show(langRow);
         applyLang(currentLang);
       }
 
       if (data.status === STATUS.ENCODING) {
-        document.getElementById('lang-row').style.display = 'none';
+        hide(langRow);
         [...video.querySelectorAll('track')].forEach(t => t.remove());
       }
 
@@ -379,7 +394,7 @@
       seekBar.value = video.currentTime;
       timeCurrent.textContent = formatTime(video.currentTime);
       const pct = (video.currentTime / video.duration) * 100 || 0;
-      seekBar.style.background = `linear-gradient(to right, #818cf8 ${pct}%, #2d3148 ${pct}%)`;
+      seekBar.style.background = `linear-gradient(to right, #818cf8 ${pct}%, #27272a ${pct}%)`;
     });
 
     video.addEventListener('ended', () => { btnPlay.textContent = '▶'; });
@@ -403,13 +418,23 @@
     btnBack.addEventListener('click', () => { video.currentTime = Math.max(0, video.currentTime - 10); });
     btnFwd.addEventListener('click',  () => { video.currentTime = Math.min(video.duration, video.currentTime + 10); });
 
+    const volSvg = {
+      high: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>',
+      low:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>',
+      mute: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>',
+    };
+    function updateVolIcon() {
+      if (video.muted || volumeSlider.value == 0) volIcon.innerHTML = volSvg.mute;
+      else if (volumeSlider.value < 0.5) volIcon.innerHTML = volSvg.low;
+      else volIcon.innerHTML = volSvg.high;
+    }
     volumeSlider.addEventListener('input', () => {
       video.volume = volumeSlider.value;
-      volIcon.textContent = volumeSlider.value == 0 ? '🔇' : volumeSlider.value < 0.5 ? '🔉' : '🔊';
+      updateVolIcon();
     });
     volIcon.addEventListener('click', () => {
       video.muted = !video.muted;
-      volIcon.textContent = video.muted ? '🔇' : '🔊';
+      updateVolIcon();
     });
 
     // ── 자막 언어 선택 ──
