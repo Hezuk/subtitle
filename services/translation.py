@@ -136,4 +136,4 @@ def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> 
         log.error("개별 재번역 실패: %s", e, exc_info=True)
         raise TranslationError(detail=str(e)) from e
     log.info("개별 재번역 완료")
-    return result
+    return wrap_subtitle(result)

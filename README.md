@@ -66,22 +66,33 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 subtitle/
 ├── main.py               # FastAPI 라우트 + 파이프라인 오케스트레이션
 ├── config.py              # 전역 설정 (.env → 환경변수 → 기본값)
-├── store/jobs.py          # job 상태 관리 (메모리 + JSON 디스크 영속화)
+├── store/jobs.py          # job 상태 관리 (메모리 + JSON 디스크 영속화, 스레드 안전)
 ├── utils/
 │   ├── srt.py             # SRT 파싱·변환·블록 검증
 │   ├── errors.py          # 예외 클래스 (사용자 메시지 분리)
 │   └── log.py             # 구조화 로거
 ├── services/
 │   ├── transcription.py   # Whisper 음성인식
-│   ├── translation.py     # Gemini 번역·검토·재번역
+│   ├── translation.py     # Gemini 번역·검토·재번역 (모든 출력에 줄 분할 정책 적용)
 │   └── encoding.py        # ffmpeg 자막 번인
 ├── shared.js              # 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼)
 ├── index.html             # 메인 페이지
 ├── player.html            # 팝업 플레이어
 ├── editor.html            # 팝업 에디터
+├── tests/                 # 앱 단위·통합 테스트
+├── pyproject.toml         # pytest 설정 (testpaths = tests)
 ├── 설치.bat / 실행.bat     # Windows 원클릭 설치·실행
 └── .env.example           # 설정 템플릿
 ```
+
+## 테스트
+
+```bash
+pytest          # tests/ 기본 실행 (68개, tada 제외)
+pytest -v       # 상세 출력
+```
+
+TADA 모델 테스트(`tada_test.py`, `tada/`)는 별도 환경이 필요하며 기본 실행에서 제외됩니다.
 
 ## 설정
 

@@ -31,19 +31,21 @@ subtitle/
 ├── main.py                  ← FastAPI 라우트 + 파이프라인 오케스트레이션
 ├── config.py                ← 전역 설정 (경로, API, 모델, 제한값 — .env에서 로드)
 ├── store/
-│   └── jobs.py              ← job 상태 관리 (메모리 dict + JSON 디스크 영속화)
+│   └── jobs.py              ← job 상태 관리 (메모리 dict + JSON 디스크 영속화, 스레드 안전)
 ├── utils/
 │   ├── srt.py               ← SRT 파싱/변환, 블록 검증, wrap_subtitle, fmt_elapsed
 │   ├── errors.py            ← 예외 클래스 (SubtitleError 계열)
 │   └── log.py               ← 구조화 로거 설정
 ├── services/
 │   ├── transcription.py     ← Whisper 음성인식 (모델 lazy load)
-│   ├── translation.py       ← Gemini 번역/검토/재번역 (API 호출 캡슐화)
+│   ├── translation.py       ← Gemini 번역/검토/재번역 (모든 출력에 wrap_subtitle 적용)
 │   └── encoding.py          ← ffmpeg 자막 번인
 ├── shared.js                ← 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼, 브로드캐스트)
 ├── index.html               ← 메인 페이지 (업로드, 상태 폴링, 취소, 다운로드)
 ├── player.html              ← 팝업 플레이어 (영상 미리보기 + 자막 오버레이)
 ├── editor.html              ← 팝업 에디터 (자막 편집, 재번역, SRT 가져오기/내보내기)
+├── tests/                   ← 앱 단위·통합 테스트 (pytest 기본 실행 대상)
+├── pyproject.toml           ← pytest 설정 (testpaths = tests)
 ├── 설치.bat / 실행.bat       ← Windows 설치/실행 스크립트
 ├── uploads/                 ← 임시 파일 (원본 영상, SRT)
 ├── outputs/                 ← 완성 영상 (영구 보관)
@@ -85,13 +87,17 @@ POST /encode/{job_id}
 
 ### Job persistence (store/jobs.py)
 
-- 메모리 dict + `jobs/{job_id}.json` 디스크 저장
-- 상태 변경 시 `save_job()` 호출로 디스크 동기화
+- 메모리 dict + `jobs/{job_id}.json` 디스크 저장 (원자적 쓰기: tempfile → replace)
+- `update_job(job_id, **fields)`: 필드 업데이트 + 디스크 저장을 원자적으로 처리하는 헬퍼
+- `save_job()`: 직접 호출 시 메모리 내용을 임시 파일에 쓴 뒤 replace() (쓰기 도중 파일 손상 없음)
 - `load_job()`: 메모리 → 디스크 순서로 조회
+- 동시성: `threading.RLock(_lock)`으로 모든 `jobs` dict 접근 보호 (취소 플래그 경쟁 방지)
+- job 생성 시점(`/upload`)부터 `input_path`, `ext`, `created_at` 저장 — 어느 단계에서 재시작해도 원본 파일 위치 유지
 - 서버 시작 시 `restore_jobs()`로 복원:
   - `done`: 출력 파일 존재 시 복원
-  - `ready_to_encode`: 입력 파일 + SRT 존재 시 복원
-  - 진행 중이던 작업: `error` 상태로 전환
+  - `ready_to_encode`: `input_path` + `{job_id}.srt`(한국어) + `{job_id}_en.srt`(영어) 세 파일 모두 존재 시 복원; 일부 누락 시 `error`로 전환 + 누락 파일 목록 메시지
+  - 진행 중이던 작업(`queued`~`encoding`): `error`로 전환 + 원본 파일 유무에 따라 "재업로드 필요" 또는 "파일 유실" 메시지
+  - `error`/`cancelled`: 그대로 복원
 
 ### /status response fields
 
@@ -170,7 +176,7 @@ POST /encode/{job_id}
 - 모델: `GEMINI_MODEL` (기본 `gemini-3-flash-preview`)
 - REST API: `generativelanguage.googleapis.com/v1beta/models/...`
 - 전체 자막 블록을 한 번에 전송 (`\n---\n` 구분자)
-- 번역 후 `wrap_subtitle()` 로 `MAX_SUBTITLE_CHARS` 초과 줄 자동 2줄 분할
+- **모든 출력에 `wrap_subtitle()` 적용**: `translate_with_gemini`, `review_with_gemini`, `retranslate_with_gemini` 세 함수 모두 `MAX_SUBTITLE_CHARS` 초과 줄을 2줄로 분할하여 반환 (서버에서 줄 분할 정책 보장)
 - **번역 프롬프트**: natural/sophisticated English, complete sentence/clause
 - **검토 프롬프트**: 미번역 잔존·비문·용어 일관성 확인, 수정 불가 시 `[RETRANSLATE]` 마킹
 - **재시도 로직**: `[RETRANSLATE]` 블록은 원문 재번역 후 재검토 (최대 `MAX_RETRIES`회)
@@ -286,6 +292,31 @@ POST /encode/{job_id}
 - 팝업 차단 시 인라인 안내 (`#popup-hint`) 표시 (index, player)
 - 처리 중 파일 입력 비활성화 (pointer-events + opacity)
 - 업로드/인코딩 버튼에 CSS 스피너 애니메이션
+
+---
+
+## Testing
+
+### 실행 방법
+
+```bash
+pytest          # tests/ 기본 실행 (68개)
+pytest -v       # 상세 출력
+pytest tests/test_jobs.py  # 특정 모듈만
+```
+
+`pyproject.toml`에 `testpaths = ["tests"]` 설정으로 기본 실행 시 앱 테스트만 수집.
+`tada_test.py` 및 `tada/` 내 테스트는 무거운 ML 의존성이 필요하므로 기본 실행에서 제외.
+
+### 테스트 파일
+
+| 파일 | 커버리지 |
+|------|---------|
+| `tests/test_api.py` | API 엔드포인트 입력 검증, 상태 응답 |
+| `tests/test_jobs.py` | job 저장/복원, `restore_jobs` 조건 분기, `update_job` 헬퍼, 동시성(RLock + 원자적 저장) |
+| `tests/test_translation.py` | `retranslate_with_gemini` wrap_subtitle 적용 |
+| `tests/test_srt_utils.py` | SRT 파싱·변환·블록 검증·줄 분할 |
+| `tests/test_errors.py` | 예외 계층·메시지 분리 |
 
 ---
 

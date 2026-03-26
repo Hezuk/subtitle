@@ -10,7 +10,7 @@ from config import (
     MAX_UPLOAD_MB, ALLOWED_EXTS,
     MAX_BLOCKS, MAX_TEXT_LEN, MAX_REQUIREMENT_LEN, MAX_RETRIES,
 )
-from store.jobs import jobs, save_job, load_job, restore_jobs, cleanup_job_files, cleanup_stale
+from store.jobs import jobs, _lock as jobs_lock, save_job, update_job, load_job, restore_jobs, cleanup_job_files, cleanup_stale
 from utils.srt import (
     fmt_elapsed, parse_srt, segments_to_srt, srt_to_vtt,
     validate_blocks, load_blocks, save_blocks,
@@ -78,7 +78,15 @@ async def upload(file: UploadFile = File(...)):
                 raise HTTPException(400, f"파일이 너무 큽니다. (최대 {MAX_UPLOAD_MB}MB)")
             await f.write(chunk)
 
-    jobs[job_id] = {"status": "queued", "message": "대기 중...", "filename": file.filename}
+    with jobs_lock:
+        jobs[job_id] = {
+            "status": "queued",
+            "message": "대기 중...",
+            "filename": file.filename,
+            "input_path": str(input_path),
+            "ext": ext,
+            "created_at": time.time(),
+        }
     save_job(job_id)
     log.info("job=%s 업로드 완료: %s (%s)", job_id, file.filename, ext)
     pipeline_executor.submit(run_pipeline, job_id, str(input_path))
@@ -195,14 +203,13 @@ async def encode(job_id: str):
     job = load_job(job_id) or {}
     if job.get("status") != "ready_to_encode":
         return JSONResponse({"error": "준비되지 않은 상태입니다."}, status_code=400)
-    jobs[job_id].update({
-        "status": "encoding",
-        "message": "🎬 자막 인코딩 중...",
-        "progress": 82,
-        "phase": "encode",
-        "subphase": "encoding",
-    })
-    save_job(job_id)
+    update_job(job_id,
+        status="encoding",
+        message="🎬 자막 인코딩 중...",
+        progress=82,
+        phase="encode",
+        subphase="encoding",
+    )
     encode_executor.submit(run_encode, job_id)
     return {"ok": True}
 
@@ -216,7 +223,8 @@ async def cancel(job_id: str):
     status = job.get("status", "")
     if status in ("done", "error", "cancelled"):
         return JSONResponse({"error": "취소할 수 없는 상태입니다."}, status_code=400)
-    jobs[job_id]["cancel_requested"] = True
+    with jobs_lock:
+        jobs[job_id]["cancel_requested"] = True
     log.info("job=%s 취소 요청", job_id)
     # ready_to_encode는 실행 중인 프로세스가 없으므로 즉시 취소
     if status == "ready_to_encode":
@@ -268,19 +276,20 @@ async def download(job_id: str):
 # ── Cancel helpers ────────────────────────────────────────────────────────────
 def _check_cancel(job_id: str):
     """취소 요청 시 CancelledError 발생."""
-    if jobs.get(job_id, {}).get("cancel_requested"):
+    with jobs_lock:
+        requested = jobs.get(job_id, {}).get("cancel_requested")
+    if requested:
         raise CancelledError()
 
 
 def _do_cancel(job_id: str):
     """취소 상태로 전환 + 파일 정리."""
     log.info("job=%s 취소 처리 완료", job_id)
-    jobs[job_id].update({
-        "status": "cancelled",
-        "message": "🚫 작업이 취소되었습니다.",
-        "progress": 0,
-    })
-    save_job(job_id)
+    update_job(job_id,
+        status="cancelled",
+        message="🚫 작업이 취소되었습니다.",
+        progress=0,
+    )
     cleanup_job_files(job_id)
 
 
@@ -294,23 +303,23 @@ def run_pipeline(job_id: str, input_path: str):
 
         # Step 1: Transcribe — 모델 로딩 + 음성 인식 (0~30%)
         t0 = time.time()
-        jobs[job_id].update({
-            "status": "transcribing",
-            "message": "🎤 음성 인식 모델 준비 중...",
-            "progress": 3,
-            "phase": "transcribe",
-            "subphase": "model_loading",
-            "stage_start": t0,
-        })
-        save_job(job_id)
+        update_job(job_id,
+            status="transcribing",
+            message="🎤 음성 인식 모델 준비 중...",
+            progress=3,
+            phase="transcribe",
+            subphase="model_loading",
+            stage_start=t0,
+        )
 
         def on_model_ready():
             _check_cancel(job_id)
-            jobs[job_id].update({
-                "message": "🎤 음성 인식 중...",
-                "progress": 8,
-                "subphase": "transcribing",
-            })
+            with jobs_lock:
+                jobs[job_id].update({
+                    "message": "🎤 음성 인식 중...",
+                    "progress": 8,
+                    "subphase": "transcribing",
+                })
 
         result = transcribe(input_path, on_model_ready=on_model_ready)
         _check_cancel(job_id)
@@ -325,26 +334,26 @@ def run_pipeline(job_id: str, input_path: str):
         # Step 2: Translate — Gemini 번역 (30~55%)
         _check_cancel(job_id)
         t1 = time.time()
-        jobs[job_id].update({
-            "status": "translating",
-            "message": f"🌍 {total}개 블록 번역 중... (감지: {detected_lang}) | 음성인식 {transcribe_elapsed}",
-            "progress": 35,
-            "phase": "translate",
-            "subphase": "translating",
-            "current": 0,
-            "total": total,
-            "stage_start": t1,
-        })
-        save_job(job_id)
+        update_job(job_id,
+            status="translating",
+            message=f"🌍 {total}개 블록 번역 중... (감지: {detected_lang}) | 음성인식 {transcribe_elapsed}",
+            progress=35,
+            phase="translate",
+            subphase="translating",
+            current=0,
+            total=total,
+            stage_start=t1,
+        )
 
         all_translated = translate_with_gemini(blocks)
         _check_cancel(job_id)
         translate_elapsed = fmt_elapsed(time.time() - t1)
-        jobs[job_id].update({
-            "message": f"🌍 번역 완료 ({total}개) | {translate_elapsed}",
-            "progress": 55,
-            "subphase": "done",
-        })
+        with jobs_lock:
+            jobs[job_id].update({
+                "message": f"🌍 번역 완료 ({total}개) | {translate_elapsed}",
+                "progress": 55,
+                "subphase": "done",
+            })
 
         current_en = {b["idx"]: all_translated.get(b["idx"], b["text"]) for b in blocks}
 
@@ -354,15 +363,14 @@ def run_pipeline(job_id: str, input_path: str):
         for attempt in range(MAX_RETRIES):
             _check_cancel(job_id)
             attempt_label = f" ({attempt+1}/{MAX_RETRIES})" if attempt > 0 else ""
-            jobs[job_id].update({
-                "status": "reviewing",
-                "message": f"🔍 번역 품질 검토 중...{attempt_label}",
-                "progress": 60 + attempt * 6,
-                "phase": "review",
-                "subphase": "reviewing",
-                "stage_start": time.time(),
-            })
-            save_job(job_id)
+            update_job(job_id,
+                status="reviewing",
+                message=f"🔍 번역 품질 검토 중...{attempt_label}",
+                progress=60 + attempt * 6,
+                phase="review",
+                subphase="reviewing",
+                stage_start=time.time(),
+            )
 
             en_blocks_list = [
                 {"idx": b["idx"], "timestamp": b["timestamp"], "text": current_en[b["idx"]]}
@@ -380,24 +388,24 @@ def run_pipeline(job_id: str, input_path: str):
                 break
 
             if attempt < MAX_RETRIES - 1:
-                jobs[job_id].update({
-                    "message": f"🔄 불량 {len(bad_idxs)}개 재번역 중... ({attempt+2}/{MAX_RETRIES}회차)",
-                    "progress": 66 + attempt * 6,
-                    "subphase": "retranslating",
-                    "stage_start": time.time(),
-                })
-                save_job(job_id)
+                update_job(job_id,
+                    message=f"🔄 불량 {len(bad_idxs)}개 재번역 중... ({attempt+2}/{MAX_RETRIES}회차)",
+                    progress=66 + attempt * 6,
+                    subphase="retranslating",
+                    stage_start=time.time(),
+                )
                 bad_ko_blocks = [b for b in blocks if b["idx"] in bad_idxs]
                 retranslated = translate_with_gemini(bad_ko_blocks)
                 for idx, text in retranslated.items():
                     current_en[idx] = text
 
         review_elapsed = fmt_elapsed(time.time() - t2)
-        jobs[job_id].update({
-            "message": f"✅ 검토 완료 ({total}개) | {review_elapsed}",
-            "progress": 78,
-            "subphase": "done",
-        })
+        with jobs_lock:
+            jobs[job_id].update({
+                "message": f"✅ 검토 완료 ({total}개) | {review_elapsed}",
+                "progress": 78,
+                "subphase": "done",
+            })
 
         en_lines = []
         for b in blocks:
@@ -406,67 +414,66 @@ def run_pipeline(job_id: str, input_path: str):
         en_srt_path.write_text("\n".join(en_lines), encoding="utf-8")
 
         # 번역+검토 완료 — 사용자 확인 대기
-        jobs[job_id].update({
-            "status": "ready_to_encode",
-            "message": "✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
-            "progress": 80,
-            "phase": "ready",
-            "subphase": "waiting",
-            "input_path": input_path,
-            "detected_lang": detected_lang,
-            "timings": {
+        update_job(job_id,
+            status="ready_to_encode",
+            message="✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
+            progress=80,
+            phase="ready",
+            subphase="waiting",
+            detected_lang=detected_lang,
+            timings={
                 "transcribe": transcribe_elapsed,
                 "translate": translate_elapsed,
                 "review": review_elapsed,
             },
-        })
-        save_job(job_id)
+        )
 
     except CancelledError:
         _do_cancel(job_id)
 
     except SubtitleError as e:
         log.error("job=%s 파이프라인 실패 (%s): %s", job_id, type(e).__name__, e.detail)
-        jobs[job_id].update({"status": "error", "message": f"❌ {e.user_message}"})
-        save_job(job_id)
+        update_job(job_id, status="error", message=f"❌ {e.user_message}")
         cleanup_job_files(job_id)
 
     except Exception as e:
         log.error("job=%s 파이프라인 예기치 않은 오류: %s", job_id, e, exc_info=True)
-        jobs[job_id].update({"status": "error", "message": "❌ 예기치 않은 오류가 발생했습니다. 다시 시도해주세요."})
-        save_job(job_id)
+        update_job(job_id, status="error", message="❌ 예기치 않은 오류가 발생했습니다. 다시 시도해주세요.")
         cleanup_job_files(job_id)
 
 
 # ── Encode: 번인 ──────────────────────────────────────────────────────────────
 def run_encode(job_id: str):
-    job = jobs[job_id]
-    input_path = job["input_path"]
+    with jobs_lock:
+        job = jobs[job_id]
+        input_path = job["input_path"]
     en_srt_path = UPLOADS / f"{job_id}_en.srt"
     output_path = OUTPUTS / f"{job_id}.mp4"
 
     def cancel_check():
-        return jobs.get(job_id, {}).get("cancel_requested", False)
+        with jobs_lock:
+            return jobs.get(job_id, {}).get("cancel_requested", False)
 
     try:
         _check_cancel(job_id)
         t0 = time.time()
-        jobs[job_id].update({"stage_start": t0})
+        with jobs_lock:
+            jobs[job_id].update({"stage_start": t0})
 
         encode_video(input_path, en_srt_path, output_path, cancel_check=cancel_check)
 
         encode_elapsed = fmt_elapsed(time.time() - t0)
-        prev_timings = jobs[job_id].get("timings", {})
-        jobs[job_id].update({
-            "status": "done",
-            "message": f"✅ 완료! | 인코딩 {encode_elapsed}",
-            "progress": 100,
-            "phase": "done",
-            "subphase": "complete",
-            "output": str(output_path),
-            "timings": {**prev_timings, "encode": encode_elapsed},
-        })
-        save_job(job_id)
+        with jobs_lock:
+            prev_timings = jobs[job_id].get("timings", {})
+        update_job(job_id,
+            status="done",
+            message=f"✅ 완료! | 인코딩 {encode_elapsed}",
+            progress=100,
+            phase="done",
+            subphase="complete",
+            output=str(output_path),
+            timings={**prev_timings, "encode": encode_elapsed},
+        )
 
         # 성공 시에만 임시 파일 삭제
         cleanup_job_files(job_id)
@@ -480,20 +487,18 @@ def run_encode(job_id: str):
         log.error("job=%s 인코딩 실패: %s", job_id, e.detail)
         try: output_path.unlink(missing_ok=True)
         except Exception: pass
-        jobs[job_id].update({
-            "status": "ready_to_encode",
-            "message": f"❌ {e.user_message}",
-            "progress": 80,
-        })
-        save_job(job_id)
+        update_job(job_id,
+            status="ready_to_encode",
+            message=f"❌ {e.user_message}",
+            progress=80,
+        )
 
     except Exception as e:
         log.error("job=%s 인코딩 예기치 않은 오류: %s", job_id, e, exc_info=True)
         try: output_path.unlink(missing_ok=True)
         except Exception: pass
-        jobs[job_id].update({
-            "status": "ready_to_encode",
-            "message": "❌ 인코딩 중 예기치 않은 오류 — 다시 시도해주세요.",
-            "progress": 80,
-        })
-        save_job(job_id)
+        update_job(job_id,
+            status="ready_to_encode",
+            message="❌ 인코딩 중 예기치 않은 오류 — 다시 시도해주세요.",
+            progress=80,
+        )
