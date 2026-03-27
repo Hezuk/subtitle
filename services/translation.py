@@ -48,14 +48,29 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
     log.info("번역 시작: %d개 블록", len(blocks))
     texts = "\n---\n".join(f"[{b['idx']}] {b['text']}" for b in blocks)
     prompt = (
-        "Translate the following subtitle segments to English.\n"
-        "Rules:\n"
-        "- Each segment is marked with [number]\n"
-        "- Use natural, sophisticated English — avoid literal word-for-word translation\n"
-        "- Each subtitle must be a complete sentence or complete clause — no fragments or mid-sentence breaks\n"
-        "- Maintain consistent tone, terminology, and style throughout all segments\n"
-        "- Ensure each segment flows coherently with the surrounding context\n"
-        "- Return ONLY the translated segments with the same [number] markers\n\n"
+        "You are a professional Korean-to-English subtitle translator.\n"
+        "Translate each Korean subtitle segment into natural, concise English subtitles.\n\n"
+        "Output rules:\n"
+        "- Keep the same [number] marker for every segment\n"
+        "- Translate every segment independently, but keep wording consistent across the full list\n"
+        "- Return ONLY translated segments with the same [number] markers\n"
+        "- Do not omit, merge, split, reorder, explain, or comment\n\n"
+        "Subtitle style rules:\n"
+        "- Write natural spoken English suitable for on-screen subtitles\n"
+        "- Prioritize clarity, brevity, and readability over literal wording\n"
+        "- Preserve the original meaning, tone, intent, and speaker attitude\n"
+        "- Use idiomatic English when it sounds more natural\n"
+        "- Do not over-translate or add information not present in the Korean\n"
+        "- Avoid stiff, literary, or overly formal phrasing unless the source is clearly formal\n"
+        "- If the Korean is casual, make the English casual; if polite, keep it politely neutral\n"
+        "- Fragments are allowed when they sound natural as subtitles; do not force every line into a full sentence\n"
+        "- Resolve implied subjects or objects only when necessary for natural English\n"
+        "- Keep names, key terms, and repeated expressions consistent across segments\n\n"
+        "Important cautions:\n"
+        "- Remove filler only if it is meaningless; preserve it if it affects tone or emotion\n"
+        "- Translate interjections naturally, including surprise, hesitation, sighs, and laughter\n"
+        "- Do not leave Korean words untranslated unless they are proper nouns\n\n"
+        "Segments:\n\n"
         f"{texts}"
     )
     try:
@@ -76,20 +91,23 @@ def review_with_gemini(blocks: list[dict]) -> dict[str, str]:
     log.info("검토 시작: %d개 블록", len(blocks))
     texts = "\n---\n".join(f"[{b['idx']}] {b['text']}" for b in blocks)
     prompt = (
-        "You are a subtitle QA editor. Review and correct the following English subtitle segments.\n"
-        "Fix any of these issues you find:\n"
-        "1. Untranslated text: any non-English words must be translated to English\n"
-        "2. Grammar: fix fragments, broken sentences, or unnatural phrasing so each segment reads as natural English\n"
-        "3. Consistency: ensure the same terms, names, and style are used throughout all segments\n"
+        "You are an English subtitle editor reviewing machine-translated subtitles.\n"
+        "Revise each segment so it reads like polished, natural on-screen English subtitles.\n\n"
+        "Check and fix:\n"
+        "1. Any untranslated or partially untranslated Korean\n"
+        "2. Awkward, literal, ungrammatical, or unnatural English\n"
+        "3. Inconsistent names, terms, tone, or repeated phrasing\n"
+        "4. Overly wordy lines that can be made shorter without losing meaning\n\n"
         "Rules:\n"
-        "- Use natural, sophisticated English — avoid literal word-for-word translation\n"
-        "- Each subtitle must be a complete sentence or complete clause — no fragments or mid-sentence breaks\n"
-        "- Maintain consistent tone, terminology, and style throughout all segments\n"
-        "- Ensure each segment flows coherently with the surrounding context\n"
-        "- If a segment is too flawed to fix (wrong content, missing translation, or incomprehensible), "
-        "output [RETRANSLATE] as its text so it can be retranslated from the source\n"
-        "- Return ONLY the corrected segments with the same [number] markers, one per line\n"
-        "- Do not add explanations, comments, or extra text\n\n"
+        "- Keep the same [number] marker for every segment\n"
+        "- Return ONLY the corrected segments with the same [number] markers\n"
+        "- Do not omit, merge, split, reorder, explain, or comment\n"
+        "- Use concise, natural spoken English suitable for subtitles\n"
+        "- Preserve meaning, tone, intent, and speaker attitude\n"
+        "- Fragments are allowed when natural for subtitles; do not force every line into a full sentence\n"
+        "- Keep names, key terms, and repeated expressions consistent across segments\n"
+        "- If a segment is too wrong, too incomplete, or too unclear to repair safely, output [RETRANSLATE]\n\n"
+        "Segments:\n\n"
         f"{texts}"
     )
     try:
@@ -116,17 +134,25 @@ def review_with_gemini(blocks: list[dict]) -> dict[str, str]:
 def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> str:
     log.info("개별 재번역 요청")
     prompt = (
-        "Translate the following Korean subtitle segment to English.\n"
+        "You are a professional Korean-to-English subtitle translator.\n"
+        "Rewrite the following Korean subtitle segment as natural, concise English subtitle text.\n"
         f"Korean: {ko_text}\n"
         f"Current translation: {current_en}\n"
     )
     if requirement:
         prompt += f"Additional requirement: {requirement}\n"
     prompt += (
-        "Rules:\n"
-        "- Use natural, sophisticated English — avoid literal word-for-word translation\n"
-        "- Must be a complete sentence or complete clause — no fragments\n"
+        "\nRules:\n"
         "- Return ONLY the translated text, nothing else\n"
+        "- Write natural spoken English suitable for subtitles\n"
+        "- Prioritize clarity, brevity, and readability over literal wording\n"
+        "- Preserve the original meaning, tone, intent, and speaker attitude\n"
+        "- Use idiomatic English when it sounds more natural\n"
+        "- Do not over-translate or add information not present in the Korean\n"
+        "- Avoid stiff, literary, or overly formal phrasing unless the source is clearly formal\n"
+        "- Fragments are allowed when they sound natural as subtitles; do not force a full sentence\n"
+        "- Keep names and key terms accurate and consistent\n"
+        "- Do not leave Korean words untranslated unless they are proper nouns\n"
     )
     try:
         result = _call_gemini(prompt, timeout=GEMINI_RETRANSLATE_TIMEOUT).strip()
