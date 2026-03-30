@@ -17,7 +17,7 @@ JOBS_DIR.mkdir(exist_ok=True)
 
 # ── API ───────────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro-preview-03-25")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
 GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "300"))
 GEMINI_RETRANSLATE_TIMEOUT = int(os.environ.get("GEMINI_RETRANSLATE_TIMEOUT", "60"))
 
