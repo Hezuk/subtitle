@@ -143,7 +143,7 @@ POST /encode/{job_id}
 | 설정 | 환경변수 | 기본값 | 설명 |
 |------|---------|--------|------|
 | API | `GEMINI_API_KEY` | (필수) | Gemini API 키 |
-| API | `GEMINI_MODEL` | `gemini-3-flash-preview` | Gemini 모델명 |
+| API | `GEMINI_MODEL` | `gemini-2.5-pro` | Gemini 모델명 |
 | API | `GEMINI_TIMEOUT` | `300` | Gemini API 타임아웃 (초) |
 | API | `GEMINI_RETRANSLATE_TIMEOUT` | `60` | 개별 재번역 타임아웃 (초) |
 | Whisper | `WHISPER_MODEL` | `large-v3-turbo` | Whisper 모델명 |
@@ -173,7 +173,7 @@ POST /encode/{job_id}
 - 실패 시 `TranscriptionError` 발생
 
 ### Gemini 번역 + QA (services/translation.py)
-- 모델: `GEMINI_MODEL` (기본 `gemini-3-flash-preview`)
+- 모델: `GEMINI_MODEL` (기본 `gemini-2.5-pro`)
 - REST API: `generativelanguage.googleapis.com/v1beta/models/...`
 - 전체 자막 블록을 한 번에 전송 (`\n---\n` 구분자)
 - **모든 출력에 `wrap_subtitle()` 적용**: `translate_with_gemini`, `review_with_gemini`, `retranslate_with_gemini` 세 함수 모두 `MAX_SUBTITLE_CHARS` 초과 줄을 2줄로 분할하여 반환 (서버에서 줄 분할 정책 보장)

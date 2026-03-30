@@ -101,7 +101,7 @@ TADA 모델 테스트(`tada_test.py`, `tada/`)는 별도 환경이 필요하며 
 | 환경변수 | 기본값 | 설명 |
 |---------|--------|------|
 | `GEMINI_API_KEY` | — | Gemini API 키 (필수) |
-| `GEMINI_MODEL` | `gemini-3-flash-preview` | Gemini 모델명 |
+| `GEMINI_MODEL` | `gemini-2.5-pro` | Gemini 모델명 |
 | `WHISPER_MODEL` | `large-v3-turbo` | Whisper 모델명 |
 | `FFMPEG_CRF` | `18` | 인코딩 품질 (낮을수록 고화질) |
 | `FFMPEG_PRESET` | `fast` | 인코딩 속도 |
