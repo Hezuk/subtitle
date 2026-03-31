@@ -1,0 +1,20 @@
+{
+  "status": "ready_to_encode",
+  "message": "✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
+  "filename": "5장.mp4",
+  "input_path": "/Users/sunghoonkim/claude/subtitle/uploads/cca2a351d0944745b27fa2965b01618f.mp4",
+  "ext": ".mp4",
+  "created_at": 1774935571.8591628,
+  "progress": 80,
+  "phase": "ready",
+  "subphase": "waiting",
+  "stage_start": 1774936089.934716,
+  "detected_lang": "ko",
+  "current": 0,
+  "total": 977,
+  "timings": {
+    "transcribe": "4분 16초",
+    "translate": "2분 13초",
+    "review": "4분 13초"
+  }
+}

@@ -16,17 +16,24 @@ OUTPUTS.mkdir(exist_ok=True)
 JOBS_DIR.mkdir(exist_ok=True)
 
 # ── API ───────────────────────────────────────────────────────────────────────
+DEFAULT_TRANSLATION_MODEL = os.environ.get("DEFAULT_TRANSLATION_MODEL", "claude")
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 ANTHROPIC_MAX_TOKENS = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "65536"))
 ANTHROPIC_TIMEOUT = int(os.environ.get("ANTHROPIC_TIMEOUT", "300"))
 ANTHROPIC_RETRANSLATE_TIMEOUT = int(os.environ.get("ANTHROPIC_RETRANSLATE_TIMEOUT", "60"))
 
-# ── Legacy (미사용, 호환용) ───────────────────────────────────────────────────
+# ── Gemini ────────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
 GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "300"))
 GEMINI_RETRANSLATE_TIMEOUT = int(os.environ.get("GEMINI_RETRANSLATE_TIMEOUT", "60"))
+GEMINI_RETRY_ATTEMPTS = int(os.environ.get("GEMINI_RETRY_ATTEMPTS", "4"))
+GEMINI_RETRY_BASE_DELAY = float(os.environ.get("GEMINI_RETRY_BASE_DELAY", "1.5"))
+GEMINI_RETRY_MAX_DELAY = float(os.environ.get("GEMINI_RETRY_MAX_DELAY", "12"))
+GEMINI_TRANSLATE_BATCH = int(os.environ.get("GEMINI_TRANSLATE_BATCH", "120"))
+GEMINI_REVIEW_BATCH = int(os.environ.get("GEMINI_REVIEW_BATCH", "250"))
 
 # ── Whisper ───────────────────────────────────────────────────────────────────
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "large-v3-turbo")

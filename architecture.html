@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>main.py Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0c0e14;
+    --surface: #13151e;
+    --surface-2: #1a1d2a;
+    --border: #252940;
+    --border-hover: #3a3f5c;
+    --indigo: #818cf8;
+    --indigo-dim: #5b63c7;
+    --sky: #38bdf8;
+    --sky-dim: #0c8fd6;
+    --pink: #f472b6;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --text: #e2e8f0;
+    --text-dim: #7a83a0;
+    --text-muted: #4a5170;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 3rem 2rem 4rem;
+    overflow-x: hidden;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  header {
+    margin-bottom: 3.5rem;
+  }
+
+  header .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    font-weight: 500;
+    color: var(--indigo);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    margin-bottom: .5rem;
+  }
+
+  header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.02em;
+    line-height: 1.2;
+  }
+
+  header h1 span {
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  header .desc {
+    margin-top: .6rem;
+    font-size: .88rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* Section titles */
+  .section-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .68rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    margin-bottom: 1.2rem;
+    padding-left: 2px;
+  }
+
+  /* Pipeline */
+  .pipeline {
+    margin-bottom: 3.5rem;
+  }
+
+  .pipeline-track {
+    position: relative;
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+  }
+
+  .pipeline-track::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--border);
+    z-index: 0;
+  }
+
+  .phase {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .phase-dot {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+    position: relative;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    transition: all .3s;
+  }
+
+  .phase:hover .phase-dot {
+    border-color: var(--indigo);
+    box-shadow: 0 0 20px rgba(129, 140, 248, .15);
+  }
+
+  .phase-label {
+    margin-top: .7rem;
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+    line-height: 1.3;
+  }
+
+  .phase-sub {
+    font-size: .68rem;
+    color: var(--text-muted);
+    margin-top: .2rem;
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .phase-status {
+    margin-top: .4rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .62rem;
+    padding: .15rem .5rem;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .phase-status.wait { color: var(--amber); border-color: rgba(251,191,36,.25); }
+
+  /* Connector arrows between phases */
+  .phase-connector {
+    position: relative;
+    z-index: 1;
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .phase-connector svg {
+    color: var(--text-muted);
+  }
+
+  /* Two-column layout */
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 3.5rem;
+  }
+
+  /* Endpoint list */
+  .endpoint-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .endpoint-group-header {
+    padding: .8rem 1.1rem;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+
+  .endpoint-group-header .icon {
+    font-size: .9rem;
+    opacity: .7;
+  }
+
+  .endpoint-item {
+    padding: .55rem 1.1rem;
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    border-bottom: 1px solid rgba(37, 41, 64, .5);
+    transition: background .15s;
+  }
+
+  .endpoint-item:last-child { border-bottom: none; }
+  .endpoint-item:hover { background: rgba(129, 140, 248, .03); }
+
+  .method {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .62rem;
+    font-weight: 500;
+    padding: .12rem .4rem;
+    border-radius: 4px;
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: center;
+  }
+
+  .method.get { color: var(--green); background: rgba(52, 211, 153, .1); }
+  .method.post { color: var(--sky); background: rgba(56, 189, 248, .1); }
+
+  .endpoint-path {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+
+  .endpoint-desc {
+    font-size: .7rem;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  /* Function map */
+  .fn-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .fn-group-header {
+    padding: .8rem 1.1rem;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+
+  .fn-item {
+    padding: .55rem 1.1rem;
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    border-bottom: 1px solid rgba(37, 41, 64, .5);
+  }
+
+  .fn-item:last-child { border-bottom: none; }
+
+  .fn-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    color: var(--indigo);
+    flex-shrink: 0;
+  }
+
+  .fn-arrow {
+    color: var(--text-muted);
+    font-size: .7rem;
+    flex-shrink: 0;
+  }
+
+  .fn-desc {
+    font-size: .7rem;
+    color: var(--text-dim);
+  }
+
+  /* Data flow */
+  .dataflow {
+    margin-bottom: 3.5rem;
+  }
+
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+
+  .flow-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+
+  .flow-card:hover {
+    border-color: var(--border-hover);
+  }
+
+  .flow-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+  }
+
+  .flow-card.upload::before { background: var(--sky); }
+  .flow-card.srt-ko::before { background: var(--amber); }
+  .flow-card.srt-en::before { background: var(--indigo); }
+  .flow-card.output::before { background: var(--green); }
+
+  .flow-card .file-icon {
+    font-size: 1.2rem;
+    margin-bottom: .5rem;
+  }
+
+  .flow-card .file-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    color: var(--text);
+    margin-bottom: .3rem;
+  }
+
+  .flow-card .file-desc {
+    font-size: .68rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  .flow-card .file-lifecycle {
+    margin-top: .5rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .6rem;
+    padding: .15rem .45rem;
+    border-radius: 4px;
+    display: inline-block;
+  }
+
+  .lifecycle-temp {
+    color: var(--amber);
+    background: rgba(251, 191, 36, .08);
+    border: 1px solid rgba(251, 191, 36, .15);
+  }
+
+  .lifecycle-perm {
+    color: var(--green);
+    background: rgba(52, 211, 153, .08);
+    border: 1px solid rgba(52, 211, 153, .15);
+  }
+
+  /* Job state */
+  .state-section {
+    margin-bottom: 3.5rem;
+  }
+
+  .state-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+
+  .state-row {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    flex-wrap: wrap;
+  }
+
+  .state-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    font-weight: 500;
+    padding: .35rem .7rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    transition: all .3s;
+  }
+
+  .state-badge:hover {
+    border-color: var(--indigo);
+    color: var(--text);
+  }
+
+  .state-badge.active {
+    background: rgba(129, 140, 248, .12);
+    border-color: rgba(129, 140, 248, .3);
+    color: var(--indigo);
+  }
+
+  .state-badge.done {
+    background: rgba(52, 211, 153, .1);
+    border-color: rgba(52, 211, 153, .25);
+    color: var(--green);
+  }
+
+  .state-badge.wait {
+    background: rgba(251, 191, 36, .08);
+    border-color: rgba(251, 191, 36, .2);
+    color: var(--amber);
+  }
+
+  .state-arrow {
+    color: var(--text-muted);
+    font-size: .7rem;
+    padding: 0 .15rem;
+  }
+
+  .state-fields {
+    margin-top: 1.2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .8rem;
+  }
+
+  .field-chip {
+    display: flex;
+    align-items: baseline;
+    gap: .4rem;
+  }
+
+  .field-key {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .68rem;
+    color: var(--indigo-dim);
+  }
+
+  .field-val {
+    font-size: .68rem;
+    color: var(--text-dim);
+  }
+
+  /* QA loop diagram */
+  .qa-section {
+    margin-bottom: 3.5rem;
+  }
+
+  .qa-flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    position: relative;
+  }
+
+  .qa-step {
+    flex: 1;
+    text-align: center;
+  }
+
+  .qa-step-icon {
+    font-size: 1.4rem;
+    margin-bottom: .4rem;
+  }
+
+  .qa-step-label {
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: .15rem;
+  }
+
+  .qa-step-desc {
+    font-size: .65rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+  }
+
+  .qa-arrow {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    font-size: .85rem;
+  }
+
+  .qa-loop {
+    position: absolute;
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .6rem;
+    color: var(--pink);
+    background: var(--bg);
+    padding: .15rem .6rem;
+    border-radius: 99px;
+    border: 1px solid rgba(244, 114, 182, .25);
+  }
+
+  /* Animations */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate {
+    animation: fadeUp .5s ease-out both;
+  }
+
+  .animate:nth-child(1) { animation-delay: .05s; }
+  .animate:nth-child(2) { animation-delay: .1s; }
+  .animate:nth-child(3) { animation-delay: .15s; }
+  .animate:nth-child(4) { animation-delay: .2s; }
+  .animate:nth-child(5) { animation-delay: .25s; }
+  .animate:nth-child(6) { animation-delay: .3s; }
+  .animate:nth-child(7) { animation-delay: .35s; }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header class="animate">
+      <div class="label">Architecture Map</div>
+      <h1>main.py <span>/ subtitle generator</span></h1>
+      <p class="desc">FastAPI single-file backend — Whisper 음성인식, Gemini 번역+QA, ffmpeg 번인</p>
+    </header>
+
+    <!-- Pipeline -->
+    <section class="pipeline animate">
+      <div class="section-title">Processing Pipeline</div>
+      <div class="pipeline-track">
+        <div class="phase">
+          <div class="phase-dot">📁</div>
+          <div class="phase-label">Upload</div>
+          <div class="phase-sub">POST /upload</div>
+          <div class="phase-status">queued</div>
+        </div>
+        <div class="phase-connector">
+          <svg width="20" height="12" viewBox="0 0 20 12" fill="none"><path d="M0 6h16m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="phase">
+          <div class="phase-dot">🎤</div>
+          <div class="phase-label">Whisper</div>
+          <div class="phase-sub">음성인식</div>
+          <div class="phase-status">transcribing</div>
+        </div>
+        <div class="phase-connector">
+          <svg width="20" height="12" viewBox="0 0 20 12" fill="none"><path d="M0 6h16m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="phase">
+          <div class="phase-dot">🌍</div>
+          <div class="phase-label">Gemini</div>
+          <div class="phase-sub">번역 + QA</div>
+          <div class="phase-status">translating</div>
+        </div>
+        <div class="phase-connector">
+          <svg width="20" height="12" viewBox="0 0 20 12" fill="none"><path d="M0 6h16m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="phase">
+          <div class="phase-dot">✏️</div>
+          <div class="phase-label">편집 대기</div>
+          <div class="phase-sub">사용자 확인</div>
+          <div class="phase-status wait">ready_to_encode</div>
+        </div>
+        <div class="phase-connector">
+          <svg width="20" height="12" viewBox="0 0 20 12" fill="none"><path d="M0 6h16m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="phase">
+          <div class="phase-dot">🎬</div>
+          <div class="phase-label">ffmpeg</div>
+          <div class="phase-sub">자막 번인</div>
+          <div class="phase-status">encoding</div>
+        </div>
+        <div class="phase-connector">
+          <svg width="20" height="12" viewBox="0 0 20 12" fill="none"><path d="M0 6h16m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="phase">
+          <div class="phase-dot">✅</div>
+          <div class="phase-label">완료</div>
+          <div class="phase-sub">다운로드</div>
+          <div class="phase-status" style="color:var(--green); border-color:rgba(52,211,153,.25)">done</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- QA Review Loop -->
+    <section class="qa-section animate">
+      <div class="section-title">Gemini QA Review Loop (Step 3)</div>
+      <div class="qa-flow">
+        <div class="qa-step">
+          <div class="qa-step-icon">🌍</div>
+          <div class="qa-step-label">translate_with_gemini</div>
+          <div class="qa-step-desc">전체 블록 한→영 번역</div>
+        </div>
+        <div class="qa-arrow">→</div>
+        <div class="qa-step">
+          <div class="qa-step-icon">🔍</div>
+          <div class="qa-step-label">review_with_gemini</div>
+          <div class="qa-step-desc">미번역·비문·일관성 검토</div>
+        </div>
+        <div class="qa-arrow">→</div>
+        <div class="qa-step">
+          <div class="qa-step-icon">⚖️</div>
+          <div class="qa-step-label">판정</div>
+          <div class="qa-step-desc">교정 반영 or<br>[RETRANSLATE] 마킹</div>
+        </div>
+        <div class="qa-arrow">→</div>
+        <div class="qa-step">
+          <div class="qa-step-icon">🔄</div>
+          <div class="qa-step-label">불량 재번역</div>
+          <div class="qa-step-desc">마킹된 블록만<br>원문에서 재번역</div>
+        </div>
+        <div class="qa-loop">MAX_RETRIES = 2</div>
+      </div>
+    </section>
+
+    <!-- Endpoints + Functions -->
+    <div class="columns animate">
+      <!-- Endpoints -->
+      <div class="endpoint-group">
+        <div class="endpoint-group-header">
+          <span class="icon">⚡</span> API Endpoints
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/</span>
+          <span class="endpoint-desc">index.html</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/player</span>
+          <span class="endpoint-desc">player.html</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/editor</span>
+          <span class="endpoint-desc">editor.html</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method post">POST</span>
+          <span class="endpoint-path">/upload</span>
+          <span class="endpoint-desc">영상 업로드</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/status/{id}</span>
+          <span class="endpoint-desc">상태 폴링</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/original/{id}</span>
+          <span class="endpoint-desc">원본 영상</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method post">POST</span>
+          <span class="endpoint-path">/encode/{id}</span>
+          <span class="endpoint-desc">번인 시작</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/download/{id}</span>
+          <span class="endpoint-desc">완성 다운로드</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/subtitle/{id}</span>
+          <span class="endpoint-desc">WebVTT (en/ko/both)</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method get">GET</span>
+          <span class="endpoint-path">/subtitles/{id}</span>
+          <span class="endpoint-desc">JSON CRUD (편집용)</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="method post">POST</span>
+          <span class="endpoint-path">/retranslate/{id}</span>
+          <span class="endpoint-desc">개별 재번역</span>
+        </div>
+      </div>
+
+      <!-- Functions -->
+      <div class="fn-group">
+        <div class="fn-group-header">
+          <span class="icon">⚙️</span> Internal Functions
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">run_pipeline()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">Phase 1: 음성인식 → 번역 → QA검토</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">run_encode()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">Phase 2: ffmpeg 자막 번인</span>
+        </div>
+        <div class="fn-item" style="border-top:1px solid var(--border); margin-top:2px; padding-top:.65rem">
+          <span class="fn-name">translate_with_gemini()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">전체 블록 일괄 번역</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">review_with_gemini()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">QA 검토 + RETRANSLATE 판정</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">retranslate_with_gemini()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">단건 재번역 (에디터)</span>
+        </div>
+        <div class="fn-item" style="border-top:1px solid var(--border); margin-top:2px; padding-top:.65rem">
+          <span class="fn-name">parse_srt()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">SRT → [{idx, timestamp, text}]</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">segments_to_srt()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">Whisper segments → SRT</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">srt_to_vtt()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">SRT → WebVTT (player용)</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">wrap_subtitle()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">42자 초과 줄 2줄 분할</span>
+        </div>
+        <div class="fn-item">
+          <span class="fn-name">fmt_elapsed()</span>
+          <span class="fn-arrow">→</span>
+          <span class="fn-desc">초 → "1분 23초" 포맷</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Flow -->
+    <section class="dataflow animate">
+      <div class="section-title">File Lifecycle</div>
+      <div class="flow-grid">
+        <div class="flow-card upload">
+          <div class="file-icon">🎥</div>
+          <div class="file-name">uploads/{id}.mp4</div>
+          <div class="file-desc">업로드된 원본 영상<br>/original/{id}로 서빙</div>
+          <div class="file-lifecycle lifecycle-temp">done 후 삭제</div>
+        </div>
+        <div class="flow-card srt-ko">
+          <div class="file-icon">📄</div>
+          <div class="file-name">uploads/{id}.srt</div>
+          <div class="file-desc">한국어 자막 (Whisper)<br>에디터 편집 가능</div>
+          <div class="file-lifecycle lifecycle-temp">done 후 삭제</div>
+        </div>
+        <div class="flow-card srt-en">
+          <div class="file-icon">📝</div>
+          <div class="file-name">uploads/{id}_en.srt</div>
+          <div class="file-desc">영어 자막 (Gemini)<br>에디터 편집/재번역 가능</div>
+          <div class="file-lifecycle lifecycle-temp">done 후 삭제</div>
+        </div>
+        <div class="flow-card output">
+          <div class="file-icon">✅</div>
+          <div class="file-name">outputs/{id}.mp4</div>
+          <div class="file-desc">완성 영상<br>/download/{id}로 서빙</div>
+          <div class="file-lifecycle lifecycle-perm">영구 보관</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Job State -->
+    <section class="state-section animate">
+      <div class="section-title">Job State Machine</div>
+      <div class="state-box">
+        <div class="state-row">
+          <span class="state-badge">queued</span>
+          <span class="state-arrow">→</span>
+          <span class="state-badge active">transcribing</span>
+          <span class="state-arrow">→</span>
+          <span class="state-badge active">translating</span>
+          <span class="state-arrow">→</span>
+          <span class="state-badge wait">ready_to_encode</span>
+          <span class="state-arrow">→</span>
+          <span class="state-badge active">encoding</span>
+          <span class="state-arrow">→</span>
+          <span class="state-badge done">done</span>
+        </div>
+        <div class="state-fields">
+          <div class="field-chip">
+            <span class="field-key">status</span>
+            <span class="field-val">현재 상태</span>
+          </div>
+          <div class="field-chip">
+            <span class="field-key">message</span>
+            <span class="field-val">상세 메시지</span>
+          </div>
+          <div class="field-chip">
+            <span class="field-key">progress</span>
+            <span class="field-val">0~100%</span>
+          </div>
+          <div class="field-chip">
+            <span class="field-key">elapsed</span>
+            <span class="field-val">경과 시간</span>
+          </div>
+          <div class="field-chip">
+            <span class="field-key">timings</span>
+            <span class="field-val">단계별 소요</span>
+          </div>
+          <div class="field-chip">
+            <span class="field-key">input_path</span>
+            <span class="field-val">원본 경로</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</body>
+</html>

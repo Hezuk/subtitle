@@ -1,0 +1,16 @@
+[Unit]
+Description=Subtitle FastAPI server
+After=network.target
+
+[Service]
+Type=simple
+User=sunghoonkim
+Group=staff
+WorkingDirectory=/Users/sunghoonkim/claude/subtitle
+EnvironmentFile=/Users/sunghoonkim/claude/subtitle/.env
+ExecStart=/usr/bin/env uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

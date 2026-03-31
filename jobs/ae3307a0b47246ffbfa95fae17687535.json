@@ -1,0 +1,14 @@
+{
+  "status": "ready_to_encode",
+  "message": "✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
+  "filename": "앞부분 자름.mp4",
+  "stage_start": 1774326152.543344,
+  "progress": 80,
+  "input_path": "/Users/sunghoonkim/claude/subtitle/uploads/ae3307a0b47246ffbfa95fae17687535.mp4",
+  "detected_lang": "ko",
+  "timings": {
+    "transcribe": "57초",
+    "translate": "19초",
+    "review": "56초"
+  }
+}

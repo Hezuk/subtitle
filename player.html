@@ -166,6 +166,34 @@
     .lang-btn:hover  { border-color: #38bdf8; color: #38bdf8; }
     .lang-btn.active { background: #38bdf8; border-color: #38bdf8; color: #09090b; }
 
+    .source-row {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      margin-top: .5rem;
+    }
+    .source-label {
+      font-size: .75rem;
+      color: #71717a;
+      margin-right: .2rem;
+      white-space: nowrap;
+    }
+    .source-btn {
+      background: #1f1f23;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      font-size: .75rem;
+      font-weight: 600;
+      padding: .25rem .6rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all .15s;
+      margin: 0;
+      width: auto;
+    }
+    .source-btn:hover { border-color: #34d399; color: #34d399; }
+    .source-btn.active { background: #34d399; border-color: #34d399; color: #09090b; }
+
     /* Speed buttons */
     .speed-row {
       display: flex;
@@ -273,6 +301,11 @@
       <button class="lang-btn" data-lang="ko">한국어</button>
       <button class="lang-btn" data-lang="both">동시</button>
     </div>
+    <div class="source-row hidden" id="source-row">
+      <span class="source-label">영상</span>
+      <button class="source-btn active" data-source="original">원본</button>
+      <button class="source-btn hidden" data-source="final">완성본</button>
+    </div>
     <div class="speed-row">
       <span class="speed-label">배속</span>
       <button class="speed-btn" data-speed="0.5">0.5x</button>
@@ -300,6 +333,7 @@
     const jobId = getJobId();
     let lastStatus = null;
     let editorWin  = null;
+    let currentSource = 'original';
 
     function show(el) { el.classList.remove('hidden'); }
     function hide(el) { el.classList.add('hidden'); }
@@ -342,18 +376,57 @@
     });
 
     function reloadSubtitleTrack() {
+      if (currentSource !== 'original') return;
       applyLang(currentLang);
     }
 
     function loadVideo(src) {
+      const wasPlaying = !video.paused;
+      const currentTime = video.currentTime || 0;
       video.src = src;
       video.load();
       show(video);
       hide(waitingMsg);
       btnPlay.textContent = '▶';
+      video.addEventListener('loadedmetadata', function restorePlayback() {
+        video.removeEventListener('loadedmetadata', restorePlayback);
+        const safeTime = Math.min(currentTime, video.duration || 0);
+        if (Number.isFinite(safeTime)) {
+          video.currentTime = safeTime;
+        }
+        if (wasPlaying) {
+          video.play().then(() => {
+            btnPlay.textContent = '⏸';
+            btnPlay.setAttribute('aria-label', '일시정지');
+          }).catch(() => {});
+        }
+      });
     }
 
     const langRow = document.getElementById('lang-row');
+    const sourceRow = document.getElementById('source-row');
+    const finalSourceBtn = document.querySelector('[data-source="final"]');
+
+    function updateSourceButtons() {
+      document.querySelectorAll('.source-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.source === currentSource);
+      });
+    }
+
+    function setSource(source) {
+      if (!jobId) return;
+      currentSource = source;
+      if (source === 'final') {
+        hide(langRow);
+        [...video.querySelectorAll('track')].forEach(t => t.remove());
+        loadVideo(`/download/${jobId}`);
+      } else {
+        show(langRow);
+        loadVideo(`/original/${jobId}`);
+        applyLang(currentLang);
+      }
+      updateSourceButtons();
+    }
 
     function handleStatus(data) {
       statusLabel.textContent = fmtStatus(data);
@@ -366,20 +439,24 @@
       }
 
       if (data.status === STATUS.READY_TO_ENCODE) {
-        loadVideo(`/original/${jobId}`);
-        show(langRow);
-        applyLang(currentLang);
+        currentSource = 'original';
+        hide(finalSourceBtn);
+        show(sourceRow);
+        setSource('original');
       }
 
       if (data.status === STATUS.ENCODING) {
         hide(langRow);
-        [...video.querySelectorAll('track')].forEach(t => t.remove());
+        show(sourceRow);
+        hide(finalSourceBtn);
+        currentSource = 'original';
+        updateSourceButtons();
       }
 
       if (data.status === STATUS.DONE) {
-        video.pause();
-        [...video.querySelectorAll('track')].forEach(t => t.remove());
-        loadVideo(`/download/${jobId}`);
+        show(sourceRow);
+        show(finalSourceBtn);
+        setSource('final');
         statusLabel.textContent = LABELS.ENCODE_DONE;
       }
     }
@@ -450,6 +527,7 @@
 
     function applyLang(lang) {
       currentLang = lang;
+      if (currentSource !== 'original') return;
       const currentTime = video.currentTime;
       [...video.querySelectorAll('track')].forEach(t => t.remove());
       if (lang !== 'off') {
@@ -471,6 +549,13 @@
 
     document.querySelectorAll('.lang-btn').forEach(btn => {
       btn.addEventListener('click', () => applyLang(btn.dataset.lang));
+    });
+
+    document.querySelectorAll('.source-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('hidden')) return;
+        setSource(btn.dataset.source);
+      });
     });
 
     // ── 배속 조절 ──

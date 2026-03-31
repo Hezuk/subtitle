@@ -58,6 +58,7 @@ const LABELS = Object.freeze({
   PROCESSING:         '처리 중...',
   // 업로드
   START:              '자막 생성 시작',
+  START_WITH_SRT:     '번역 시작',
   UPLOADING:          '업로드 중...',
   NEW_FILE:           '새 파일 처리',
   UNSUPPORTED_FMT:    '지원하지 않는 형식입니다.',

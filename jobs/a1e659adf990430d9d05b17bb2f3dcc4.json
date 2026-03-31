@@ -1,0 +1,15 @@
+{
+  "status": "transcribing",
+  "message": "🎤 음성 인식 모델 준비 중... (large-v3)",
+  "filename": "5장.mp4",
+  "input_path": "/Users/sunghoonkim/claude/subtitle/uploads/a1e659adf990430d9d05b17bb2f3dcc4.mp4",
+  "ext": ".mp4",
+  "translation_model": "claude",
+  "whisper_model": "large-v3",
+  "progress": 3,
+  "source_has_ko_subtitle": false,
+  "created_at": 1774948256.784151,
+  "phase": "transcribe",
+  "subphase": "model_loading",
+  "stage_start": 1774948256.784617
+}

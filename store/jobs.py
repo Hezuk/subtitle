@@ -126,7 +126,12 @@ def restore_jobs():
 
 # ── 파일 정리 ────────────────────────────────────────────────────────────────
 
-def cleanup_job_files(job_id: str, keep_original: bool = False, keep_srts: bool = False):
+def cleanup_job_files(
+    job_id: str,
+    keep_original: bool = False,
+    keep_ko_srt: bool = False,
+    keep_en_srt: bool = False,
+):
     """job 관련 임시 파일 정리. 보존 플래그로 선택적 유지."""
     from utils.log import get_logger
     log = get_logger("cleanup")
@@ -138,8 +143,9 @@ def cleanup_job_files(job_id: str, keep_original: bool = False, keep_srts: bool 
     targets = []
     if not keep_original and input_path:
         targets.append(Path(input_path))
-    if not keep_srts:
+    if not keep_ko_srt:
         targets.append(UPLOADS / f"{job_id}.srt")
+    if not keep_en_srt:
         targets.append(UPLOADS / f"{job_id}_en.srt")
 
     for p in targets:

@@ -1,0 +1,13 @@
+{
+  "status": "error",
+  "translation_model": "claude",
+  "message": "❌ 서버 재시작으로 대기 중 작업이 중단되었으며 원본 파일도 유실되었습니다.",
+  "progress": 30,
+  "phase": "translate",
+  "subphase": "queued",
+  "error_reason": null,
+  "error_detail": null,
+  "next_action": null,
+  "retryable": null,
+  "error_code": null
+}

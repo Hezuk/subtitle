@@ -82,6 +82,114 @@
     #file-bar-name { margin-bottom: .1rem; font-weight: 600; }
     #file-bar-size { color: #71717a; font-size: .75rem; }
 
+    .optional-upload {
+      margin-top: 1rem;
+      padding: .95rem 1rem;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      background: #121216;
+    }
+    .optional-upload-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .7rem;
+    }
+    .optional-upload-title {
+      font-size: .84rem;
+      font-weight: 700;
+      color: #e4e4e7;
+      margin-bottom: .2rem;
+    }
+    .optional-upload-copy {
+      font-size: .75rem;
+      color: #71717a;
+      line-height: 1.5;
+    }
+    #subtitle-bar {
+      background: #1f1f23;
+      border: 1px solid #27272a;
+      border-radius: 10px;
+      padding: .7rem .85rem;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    #subtitle-bar:hover {
+      border-color: #38bdf8;
+      background: #20242c;
+    }
+    #subtitle-bar input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    #subtitle-bar-name {
+      margin-bottom: .1rem;
+      font-size: .88rem;
+      font-weight: 600;
+      color: #e4e4e7;
+      word-break: break-all;
+    }
+    #subtitle-bar-size {
+      font-size: .75rem;
+      color: #71717a;
+    }
+    #clear-subtitle-btn {
+      width: auto;
+      margin-top: 0;
+      padding: 0;
+      background: transparent;
+      color: #a1a1aa;
+      font-size: .75rem;
+      text-decoration: underline;
+    }
+    #clear-subtitle-btn:hover {
+      color: #fafafa;
+      transform: none;
+    }
+
+    .model-picker {
+      margin-top: 1rem;
+      padding: .9rem 1rem;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      background: #121216;
+    }
+    .model-picker-label {
+      display: block;
+      font-size: .82rem;
+      font-weight: 700;
+      color: #e4e4e7;
+      margin-bottom: .55rem;
+    }
+    .model-picker-row {
+      display: grid;
+      gap: .6rem;
+    }
+    .model-select {
+      width: 100%;
+      background: #1f1f23;
+      color: #fafafa;
+      border: 1px solid #27272a;
+      border-radius: 10px;
+      padding: .72rem .85rem;
+      font-size: .95rem;
+      font-weight: 600;
+    }
+    .model-select:focus-visible {
+      outline: 2px solid #818cf8;
+      outline-offset: 2px;
+    }
+    .model-select:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+    .model-picker-hint {
+      font-size: .75rem;
+      color: #71717a;
+      line-height: 1.5;
+    }
+
     button {
       width: 100%;
       margin-top: 1rem;
@@ -209,6 +317,47 @@
     }
     #download-btn:hover { opacity: .9; transform: translateY(-1px); }
 
+    #archive-panel {
+      margin-top: .9rem;
+      background: #141418;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: .95rem 1rem;
+    }
+    .archive-title {
+      font-size: .82rem;
+      font-weight: 700;
+      color: #e4e4e7;
+      margin-bottom: .25rem;
+    }
+    .archive-copy {
+      font-size: .75rem;
+      color: #71717a;
+      line-height: 1.5;
+      margin-bottom: .75rem;
+    }
+    .archive-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .55rem;
+    }
+    .archive-btn {
+      margin: 0;
+      width: 100%;
+      padding: .72rem .8rem;
+      border-radius: 10px;
+      border: 1px solid #27272a;
+      background: #1b1b20;
+      color: #d4d4d8;
+      font-size: .82rem;
+      font-weight: 600;
+    }
+    .archive-btn:hover {
+      border-color: #38bdf8;
+      color: #38bdf8;
+      transform: translateY(-1px);
+    }
+
     #error-box {
       margin-top: 1rem;
       background: rgba(239,68,68,.1);
@@ -218,6 +367,7 @@
       font-size: .875rem;
       color: #fca5a5;
       word-break: break-word;
+      white-space: pre-line;
     }
 
     .reset-link {
@@ -270,12 +420,18 @@
       color: #fbbf24;
       text-align: center;
     }
+
+    @media (max-width: 640px) {
+      .archive-actions {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>영상 자막 생성기</h1>
-    <p class="subtitle">동영상을 업로드하면 영어 자막이 자동으로 삽입됩니다</p>
+    <p class="subtitle">동영상을 업로드하고, 필요하면 이미 만든 한국어 SRT를 함께 선택해 번역부터 바로 시작할 수 있습니다</p>
 
     <!-- Drop zone -->
     <div id="drop-zone">
@@ -290,6 +446,48 @@
       <input type="file" id="file-input2" accept="video/*" />
       <div id="file-bar-name"></div>
       <div id="file-bar-size"></div>
+    </div>
+
+    <div class="optional-upload">
+      <div class="optional-upload-header">
+        <div>
+          <div class="optional-upload-title">이미 있는 한국어 자막 사용</div>
+          <div class="optional-upload-copy">선택하면 Whisper 음성 인식을 건너뛰고 번역 단계부터 바로 진행합니다.</div>
+        </div>
+        <button id="clear-subtitle-btn" class="hidden" type="button">선택 해제</button>
+      </div>
+      <div id="subtitle-bar">
+        <input type="file" id="subtitle-input" accept=".srt" />
+        <div id="subtitle-bar-name">한국어 SRT 선택</div>
+        <div id="subtitle-bar-size">선택 사항 · UTF-8 .srt 파일</div>
+      </div>
+    </div>
+
+    <div class="model-picker">
+      <label class="model-picker-label" for="model-select">번역 모델</label>
+      <div class="model-picker-row">
+        <select id="model-select" class="model-select" aria-label="번역 모델 선택">
+          <option value="claude" selected>Claude</option>
+          <option value="gemini">Gemini</option>
+        </select>
+        <div class="model-picker-hint">기본값은 Claude이며, 업로드 후 재번역에도 같은 모델이 유지됩니다.</div>
+      </div>
+    </div>
+
+    <div class="model-picker">
+      <label class="model-picker-label" for="whisper-model-select">Whisper 모델</label>
+      <div class="model-picker-row">
+        <select id="whisper-model-select" class="model-select" aria-label="Whisper 모델 선택">
+          <option value="turbo">turbo</option>
+          <option value="large-v3-turbo" selected>large-v3-turbo</option>
+          <option value="large-v3">large-v3</option>
+          <option value="medium">medium</option>
+          <option value="small">small</option>
+          <option value="base">base</option>
+          <option value="tiny">tiny</option>
+        </select>
+        <div class="model-picker-hint">빠른 처리엔 turbo, 더 보수적으로 맞추고 싶으면 large-v3 계열을 선택하세요.</div>
+      </div>
     </div>
 
     <button id="upload-btn" disabled aria-label="자막 생성 시작">자막 생성 시작</button>
@@ -318,6 +516,14 @@
     <button id="encode-btn" class="hidden">번인 시작</button>
     <div id="done-badge" class="hidden">영어 자막 생성 완료!</div>
     <button id="download-btn" class="hidden">자막 영상 다운로드</button>
+    <div id="archive-panel" class="hidden">
+      <div class="archive-title">보관된 원본과 한국어 자막</div>
+      <div class="archive-copy">전사 후 남겨둔 원본 영상과 한국어 자막을 여기서 다시 확인할 수 있습니다.</div>
+      <div class="archive-actions">
+        <button id="view-original-btn" class="archive-btn" type="button">원본 영상 보기</button>
+        <button id="download-ko-btn" class="archive-btn" type="button">한국어 SRT 다운로드</button>
+      </div>
+    </div>
     <div id="error-box" class="hidden" role="alert"></div>
 
     <a class="reset-link hidden" id="reset-link" onclick="resetUI()">새 파일 처리</a>
@@ -331,6 +537,12 @@
     const fileBar      = document.getElementById('file-bar');
     const fileBarName  = document.getElementById('file-bar-name');
     const fileBarSize  = document.getElementById('file-bar-size');
+    const subtitleInput = document.getElementById('subtitle-input');
+    const subtitleBarName = document.getElementById('subtitle-bar-name');
+    const subtitleBarSize = document.getElementById('subtitle-bar-size');
+    const clearSubtitleBtn = document.getElementById('clear-subtitle-btn');
+    const modelSelect  = document.getElementById('model-select');
+    const whisperModelSelect = document.getElementById('whisper-model-select');
     const uploadBtn    = document.getElementById('upload-btn');
     const openPlayerBtn= document.getElementById('open-player-btn');
     const progressSec  = document.getElementById('progress-section');
@@ -343,6 +555,9 @@
     const encodeBtn    = document.getElementById('encode-btn');
     const doneBadge    = document.getElementById('done-badge');
     const downloadBtn  = document.getElementById('download-btn');
+    const archivePanel = document.getElementById('archive-panel');
+    const viewOriginalBtn = document.getElementById('view-original-btn');
+    const downloadKoBtn = document.getElementById('download-ko-btn');
     const errorBox     = document.getElementById('error-box');
     const resetLink    = document.getElementById('reset-link');
     const popupHint    = document.getElementById('popup-hint');
@@ -354,6 +569,27 @@
 
     function show(el) { el.classList.remove('hidden'); }
     function hide(el) { el.classList.add('hidden'); }
+
+    function syncSelectedFiles() {
+      const hasVideo = !!uploadBtn._file;
+      const hasSubtitle = !!uploadBtn._subtitleFile;
+      uploadBtn.disabled = !hasVideo;
+      uploadBtn.textContent = hasSubtitle ? LABELS.START_WITH_SRT : LABELS.START;
+      whisperModelSelect.disabled = hasSubtitle;
+    }
+
+    function updateArchiveActions() {
+      if (!currentJobId) return;
+      viewOriginalBtn.onclick = () => {
+        window.open(`/original/${currentJobId}`, '_blank', 'noopener,noreferrer');
+      };
+      downloadKoBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = `/download_subtitle_ko/${currentJobId}`;
+        a.download = '';
+        a.click();
+      };
+    }
 
     // ── 팝업 열기 헬퍼 ──
     function tryOpen(url, name, w, h) {
@@ -391,6 +627,8 @@
     });
     fileInput.addEventListener('change',  () => { if (fileInput.files[0])  setFile(fileInput.files[0]); });
     fileInput2.addEventListener('change', () => { if (fileInput2.files[0]) setFile(fileInput2.files[0]); });
+    subtitleInput.addEventListener('change', () => { if (subtitleInput.files[0]) setSubtitleFile(subtitleInput.files[0]); });
+    clearSubtitleBtn.addEventListener('click', clearSubtitleFile);
 
     function setFile(file) {
       const ext = file.name.includes('.') ? '.' + file.name.split('.').pop().toLowerCase() : '';
@@ -405,7 +643,7 @@
 
       uploadBtn._file     = file;
       uploadBtn._filename = file.name;
-      uploadBtn.disabled  = false;
+      syncSelectedFiles();
 
       hide(dropZone);
       show(fileBar);
@@ -413,6 +651,30 @@
       fileBarSize.textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB — ${LABELS.CLICK_TO_CHANGE}`;
 
       show(openPlayerBtn);
+    }
+
+    function setSubtitleFile(file) {
+      const ext = file.name.includes('.') ? '.' + file.name.split('.').pop().toLowerCase() : '';
+      if (ext !== '.srt') {
+        showError('한국어 자막은 .srt 파일만 선택할 수 있습니다.');
+        subtitleInput.value = '';
+        return;
+      }
+
+      uploadBtn._subtitleFile = file;
+      subtitleBarName.textContent = file.name;
+      subtitleBarSize.textContent = `${Math.max(file.size / 1024, 0.1).toFixed(1)} KB — 전사를 건너뛰고 번역부터 시작합니다`;
+      show(clearSubtitleBtn);
+      syncSelectedFiles();
+    }
+
+    function clearSubtitleFile() {
+      uploadBtn._subtitleFile = null;
+      subtitleInput.value = '';
+      subtitleBarName.textContent = '한국어 SRT 선택';
+      subtitleBarSize.textContent = '선택 사항 · UTF-8 .srt 파일';
+      hide(clearSubtitleBtn);
+      syncSelectedFiles();
     }
 
     uploadBtn.addEventListener('click', async () => {
@@ -425,16 +687,23 @@
 
       const form = new FormData();
       form.append('file', file);
+      if (uploadBtn._subtitleFile) form.append('subtitle_file', uploadBtn._subtitleFile);
+      form.append('translation_model', modelSelect.value);
+      form.append('whisper_model', whisperModelSelect.value);
       try {
         const data = await api('/upload', { method: 'POST', body: form });
         currentJobId = data.job_id;
+        modelSelect.value = data.translation_model || modelSelect.value;
+        whisperModelSelect.value = data.whisper_model || whisperModelSelect.value;
+        modelSelect.disabled = true;
+        whisperModelSelect.disabled = true;
         setupBroadcast(currentJobId);
         poller = createPoller(currentJobId, updateUI);
         poller.start();
       } catch (err) {
         showError(err.message);
-        uploadBtn.disabled    = false;
-        uploadBtn.textContent = LABELS.START;
+        syncSelectedFiles();
+        modelSelect.disabled  = false;
       }
     });
 
@@ -459,9 +728,13 @@
       inProgress ? show(cancelBtn) : hide(cancelBtn);
 
       if (data.status === STATUS.READY_TO_TRANSLATE) {
+        if (data.translation_model) modelSelect.value = data.translation_model;
+        modelSelect.disabled = false;
         hide(uploadBtn);
         hide(cancelBtn);
-        showError(data.message);
+        show(archivePanel);
+        updateArchiveActions();
+        showJobError(data);
         retryBtn.disabled    = false;
         retryBtn.textContent = '번역 재시도';
         show(retryBtn);
@@ -473,6 +746,8 @@
         hide(uploadBtn);
         show(reviewBadge);
         show(editBtn);
+        show(archivePanel);
+        updateArchiveActions();
         encodeBtn.disabled    = false;
         encodeBtn.textContent = LABELS.ENCODE_START;
         show(encodeBtn);
@@ -484,12 +759,16 @@
         hide(reviewBadge);
         hide(editBtn);
         hide(encodeBtn);
+        show(archivePanel);
+        updateArchiveActions();
       }
 
       if (data.status === STATUS.DONE) {
         document.getElementById('step-done').classList.add('done');
         show(doneBadge);
         show(downloadBtn);
+        show(archivePanel);
+        updateArchiveActions();
         show(resetLink);
         if (!playerOpened) { playerOpened = true; openPlayer(); }
 
@@ -503,10 +782,14 @@
       }
 
       if (data.status === STATUS.ERROR || data.status === STATUS.CANCELLED) {
-        if (data.status === STATUS.ERROR) showError(data.message);
+        if (data.status === STATUS.ERROR) showJobError(data);
         show(resetLink);
         uploadBtn.disabled    = false;
+        modelSelect.disabled  = false;
+        if (data.translation_model) modelSelect.value = data.translation_model;
+        if (data.whisper_model) whisperModelSelect.value = data.whisper_model;
         uploadBtn.textContent = LABELS.NEW_FILE;
+        whisperModelSelect.disabled = !!uploadBtn._subtitleFile;
         show(uploadBtn);
       }
     }
@@ -522,7 +805,9 @@
       retryBtn.innerHTML = `<span class="spinner"></span>재시도 중...`;
       hide(errorBox);
       try {
-        await apiPost(`/retry/${currentJobId}`);
+        const data = await apiPost(`/retry/${currentJobId}`, { translation_model: modelSelect.value });
+        if (data.translation_model) modelSelect.value = data.translation_model;
+        modelSelect.disabled = true;
         hide(retryBtn);
         poller = createPoller(currentJobId, updateUI);
         poller.start();
@@ -594,6 +879,21 @@
       errorBox.textContent = msg;
     }
 
+    function formatJobError(data) {
+      const lines = [];
+      const reason = data.error_reason || data.message;
+      if (reason) lines.push(reason.replace(/^❌\s*/, ''));
+      if (data.next_action) lines.push(`대처: ${data.next_action}`);
+      if (data.error_detail && data.error_detail !== data.error_reason) {
+        lines.push(`상세: ${data.error_detail}`);
+      }
+      return lines.join('\n');
+    }
+
+    function showJobError(data) {
+      showError(formatJobError(data));
+    }
+
     function resetUI() {
       if (poller) poller.stop();
       currentJobId = null;
@@ -604,8 +904,10 @@
       editorWindow = null;
 
       uploadBtn._file       = null;
+      uploadBtn._subtitleFile = null;
+      modelSelect.disabled  = false;
+      clearSubtitleFile();
       uploadBtn.disabled    = true;
-      uploadBtn.textContent = LABELS.START;
       show(uploadBtn);
 
       show(dropZone);
@@ -624,6 +926,7 @@
       encodeBtn.textContent = LABELS.ENCODE_START;
       hide(doneBadge);
       hide(downloadBtn);
+      hide(archivePanel);
       hide(errorBox);
       hide(resetLink);
 
@@ -635,6 +938,7 @@
       });
       fileInput.value  = '';
       fileInput2.value = '';
+      subtitleInput.value = '';
     }
   </script>
 </body>

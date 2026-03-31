@@ -1,6 +1,17 @@
 """services/translation.py 단위 테스트."""
 from unittest.mock import patch
-from services.translation import retranslate_with_gemini
+
+import pytest
+import requests
+
+from services.translation import (
+    _call_gemini,
+    _provider_error,
+    normalize_translation_model,
+    retranslate_block,
+    translate_blocks,
+)
+from utils.errors import TranslationError
 
 
 def test_retranslate_applies_wrap():
@@ -10,7 +21,7 @@ def test_retranslate_applies_wrap():
     assert len(long_text) > 42
 
     with patch("services.translation._call_llm", return_value=f"  {long_text}  "):
-        result = retranslate_with_gemini("한국어 텍스트", "current", "")
+        result = retranslate_block("한국어 텍스트", "current", "", "claude")
 
     assert "\n" in result
     for line in result.splitlines():
@@ -22,7 +33,82 @@ def test_retranslate_short_text_unchanged():
     short_text = "Hello world"
 
     with patch("services.translation._call_llm", return_value=short_text):
-        result = retranslate_with_gemini("안녕", "current", "")
+        result = retranslate_block("안녕", "current", "", "gemini")
 
     assert result == "Hello world"
     assert "\n" not in result
+
+
+def test_normalize_translation_model_defaults_to_claude():
+    assert normalize_translation_model(None) == "claude"
+
+
+def test_normalize_translation_model_rejects_invalid_value():
+    with pytest.raises(ValueError):
+        normalize_translation_model("unknown")
+
+
+def test_call_gemini_retries_on_503_then_succeeds():
+    error_response = requests.Response()
+    error_response.status_code = 503
+    error_response._content = b"Service Unavailable"
+
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = b'{"candidates":[{"content":{"parts":[{"text":"Recovered"}]}}]}'
+
+    with patch("services.translation._get_api_key", return_value="test-key"), \
+         patch("services.translation.requests.post", side_effect=[error_response, ok_response]) as mock_post, \
+         patch("services.translation.time.sleep") as mock_sleep:
+        result = _call_gemini("prompt", timeout=5)
+
+    assert result == "Recovered"
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once()
+
+
+def test_call_gemini_does_not_retry_on_400():
+    bad_request = requests.Response()
+    bad_request.status_code = 400
+    bad_request._content = b"Bad Request"
+
+    with patch("services.translation._get_api_key", return_value="test-key"), \
+         patch("services.translation.requests.post", return_value=bad_request) as mock_post, \
+         patch("services.translation.time.sleep") as mock_sleep:
+        with pytest.raises(requests.HTTPError):
+            _call_gemini("prompt", timeout=5)
+
+    assert mock_post.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_translate_blocks_respects_gemini_batch_size():
+    blocks = [
+        {"idx": "1", "text": "하나"},
+        {"idx": "2", "text": "둘"},
+        {"idx": "3", "text": "셋"},
+    ]
+
+    def fake_translate(batch, translation_model, context=""):
+        return {item["idx"]: f"{translation_model}:{item['idx']}" for item in batch}
+
+    with patch("services.translation.GEMINI_TRANSLATE_BATCH", 2), \
+         patch("services.translation._translate_batch", side_effect=fake_translate) as mock_translate:
+        result = translate_blocks(blocks, "gemini")
+
+    assert result == {"1": "gemini:1", "2": "gemini:2", "3": "gemini:3"}
+    assert mock_translate.call_count == 2
+
+
+def test_provider_error_for_gemini_503_is_user_friendly():
+    response = requests.Response()
+    response.status_code = 503
+    response._content = b"Service Unavailable"
+    exc = requests.HTTPError(response=response)
+
+    err = _provider_error(exc, "gemini", TranslationError)
+
+    assert "503" in err.user_message
+    assert "Claude" in err.hint
+    assert err.retryable is True
+    assert err.error_code == "service_unavailable"
