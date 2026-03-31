@@ -11,8 +11,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 All settings are loaded from `.env` via `config.py` (see `.env.example`):
 ```
-GEMINI_API_KEY=...          # 필수
-GEMINI_MODEL=...            # 선택 (기본값 있음)
+ANTHROPIC_API_KEY=...       # 필수
+ANTHROPIC_MODEL=...         # 선택 (기본값: claude-sonnet-4-6)
 ```
 
 To stop:
@@ -38,7 +38,7 @@ subtitle/
 │   └── log.py               ← 구조화 로거 설정
 ├── services/
 │   ├── transcription.py     ← Whisper 음성인식 (모델 lazy load)
-│   ├── translation.py       ← Gemini 번역/검토/재번역 (모든 출력에 wrap_subtitle 적용)
+│   ├── translation.py       ← Claude 번역/검토/재번역 (모든 출력에 wrap_subtitle 적용)
 │   └── encoding.py          ← ffmpeg 자막 번인
 ├── shared.js                ← 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼, 브로드캐스트)
 ├── index.html               ← 메인 페이지 (업로드, 상태 폴링, 취소, 다운로드)
@@ -62,11 +62,16 @@ subtitle/
 POST /upload
   → run_pipeline() [pipeline_executor, max_workers=1]
       1. Whisper transcription       → {job_id}.srt  (Korean)
-      2. Gemini translation          → {job_id}_en.srt (English)
-      3. Gemini QA review + retry    → {job_id}_en.srt (corrected)
+      2. Claude translation          → {job_id}_en.srt (English)
+      3. Claude QA review + retry    → {job_id}_en.srt (corrected)
          - MAX_RETRIES=2: 불량 블록은 [RETRANSLATE] 마킹 후 재번역
       → status: ready_to_encode  (user reviews/edits subtitles)
       → player.html 자동 오픈 (/player?job_id=xxx)
+
+POST /retry/{job_id}
+  → run_translate_pipeline() [pipeline_executor]
+      - 기존 한국어 SRT에서 번역 재시도 (음성인식 생략)
+      → 2~3단계 재실행
 
 POST /encode/{job_id}
   → run_encode() [encode_executor, max_workers=1]
@@ -80,8 +85,9 @@ POST /encode/{job_id}
 
 `queued → transcribing → translating → reviewing → ready_to_encode → encoding → done`
 
+- 번역/검토 실패 시 `ready_to_translate` (한국어 SRT 유지, `POST /retry/{job_id}`로 재시도 가능)
 - 인코딩 실패 시 `ready_to_encode`로 복원 (파일 유지, 재시도 가능)
-- 파이프라인 실패 시 `error` (임시 파일 삭제)
+- 음성인식 실패 시 `error` (임시 파일 삭제)
 - 사용자 취소 시 `cancelled` (임시 파일 삭제)
 - `POST /cancel/{job_id}`: 진행 중 작업 취소 (ffmpeg은 0.5초 내 프로세스 종료)
 
@@ -96,6 +102,7 @@ POST /encode/{job_id}
 - 서버 시작 시 `restore_jobs()`로 복원:
   - `done`: 출력 파일 존재 시 복원
   - `ready_to_encode`: `input_path` + `{job_id}.srt`(한국어) + `{job_id}_en.srt`(영어) 세 파일 모두 존재 시 복원; 일부 누락 시 `error`로 전환 + 누락 파일 목록 메시지
+  - `ready_to_translate`: `input_path` + `{job_id}.srt`(한국어) 존재 시 복원; 누락 시 `error`로 전환
   - 진행 중이던 작업(`queued`~`encoding`): `error`로 전환 + 원본 파일 유무에 따라 "재업로드 필요" 또는 "파일 유실" 메시지
   - `error`/`cancelled`: 그대로 복원
 
@@ -122,6 +129,7 @@ POST /encode/{job_id}
 | GET | `/status/{job_id}` | job 상태 폴링 |
 | GET | `/original/{job_id}` | 원본 영상 서빙 (player 미리보기용) |
 | POST | `/encode/{job_id}` | 번인 시작 (ready_to_encode 상태에서만) |
+| POST | `/retry/{job_id}` | 번역 재시도 (ready_to_translate 상태에서만) |
 | POST | `/cancel/{job_id}` | 진행 중 작업 취소 |
 | GET | `/download/{job_id}` | 완성 영상 다운로드 |
 | GET | `/subtitle/{job_id}` | 영어 자막 WebVTT |
@@ -142,10 +150,11 @@ POST /encode/{job_id}
 
 | 설정 | 환경변수 | 기본값 | 설명 |
 |------|---------|--------|------|
-| API | `GEMINI_API_KEY` | (필수) | Gemini API 키 |
-| API | `GEMINI_MODEL` | `gemini-2.5-pro` | Gemini 모델명 |
-| API | `GEMINI_TIMEOUT` | `300` | Gemini API 타임아웃 (초) |
-| API | `GEMINI_RETRANSLATE_TIMEOUT` | `60` | 개별 재번역 타임아웃 (초) |
+| API | `ANTHROPIC_API_KEY` | (필수) | Anthropic API 키 |
+| API | `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | Claude 모델명 |
+| API | `ANTHROPIC_MAX_TOKENS` | `65536` | 최대 출력 토큰 수 |
+| API | `ANTHROPIC_TIMEOUT` | `300` | API 타임아웃 (초) |
+| API | `ANTHROPIC_RETRANSLATE_TIMEOUT` | `60` | 개별 재번역 타임아웃 (초) |
 | Whisper | `WHISPER_MODEL` | `large-v3-turbo` | Whisper 모델명 |
 | Whisper | `WHISPER_LANGUAGE` | `ko` | 음성인식 언어 |
 | Whisper | `WHISPER_FP16` | `false` | FP16 사용 여부 |
@@ -172,15 +181,16 @@ POST /encode/{job_id}
 - 첫 실행 시 모델 다운로드 (~1.5GB)
 - 실패 시 `TranscriptionError` 발생
 
-### Gemini 번역 + QA (services/translation.py)
-- 모델: `GEMINI_MODEL` (기본 `gemini-2.5-pro`)
-- REST API: `generativelanguage.googleapis.com/v1beta/models/...`
+### Claude 번역 + QA (services/translation.py)
+- 모델: `ANTHROPIC_MODEL` (기본 `claude-sonnet-4-6`)
+- REST API: `api.anthropic.com/v1/messages` (확장 출력 128k 토큰 지원)
 - 전체 자막 블록을 한 번에 전송 (`\n---\n` 구분자)
 - **모든 출력에 `wrap_subtitle()` 적용**: `translate_with_gemini`, `review_with_gemini`, `retranslate_with_gemini` 세 함수 모두 `MAX_SUBTITLE_CHARS` 초과 줄을 2줄로 분할하여 반환 (서버에서 줄 분할 정책 보장)
-- **번역 프롬프트**: natural/sophisticated English, complete sentence/clause
-- **검토 프롬프트**: 미번역 잔존·비문·용어 일관성 확인, 수정 불가 시 `[RETRANSLATE]` 마킹
+- **번역 프롬프트**: 최대 2줄·줄당 42자 제한, 문맥 연결(단편→독립적 문장), 간결성 우선
+- **검토 프롬프트**: 미번역·비문·용어 일관성·길이 초과 직접 수정, `[RETRANSLATE]`는 의미 자체가 근본적으로 틀린 경우만
 - **재시도 로직**: `[RETRANSLATE]` 블록은 원문 재번역 후 재검토 (최대 `MAX_RETRIES`회)
 - **개별 재번역**: `/retranslate/{job_id}` — 에디터에서 요구사항 지정 가능
+- **번역 실패 복구**: 음성인식 성공 후 번역 실패 시 `ready_to_translate` 상태로 전환 (한국어 SRT 유지, `POST /retry/{job_id}`로 재시도)
 - API 키 미설정 시 `ConfigError`, 호출 실패 시 `TranslationError`/`ReviewError`
 
 ### ffmpeg (services/encoding.py)
@@ -199,8 +209,8 @@ POST /encode/{job_id}
 | `CancelledError` | 사용자 취소 | (별도 처리) |
 | `ConfigError` | API 키 미설정 | 서버 설정 오류 |
 | `TranscriptionError` | Whisper 모델/실행 | 음성 인식 실패 |
-| `TranslationError` | Gemini 번역 API | 번역 실패 |
-| `ReviewError` | Gemini 검토 API | 검토 실패 |
+| `TranslationError` | Claude 번역 API | 번역 실패 |
+| `ReviewError` | Claude 검토 API | 검토 실패 |
 | `EncodeError` | ffmpeg 실행 | 인코딩 실패 |
 
 `CancelledError`는 독립 예외. 나머지는 `SubtitleError` 기반 (`detail`(로그용) + `user_message`(사용자 표시용) 분리).
@@ -216,6 +226,7 @@ POST /encode/{job_id}
 
 ### 파일 관리
 - 임시 파일: `uploads/{job_id}.*` — 인코딩 성공 또는 취소 시 삭제 (`cleanup_job_files()`)
+- 번역 실패 시 한국어 SRT 유지 (`ready_to_translate` → 재시도 가능)
 - 인코딩 실패 시 파일 유지 (자막 수정 후 재시도 가능)
 - 출력 파일: `outputs/{job_id}.mp4` — 영구 보관
 - job 메타데이터: `jobs/{job_id}.json` — 서버 재시작 시 복원용

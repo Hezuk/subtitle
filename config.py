@@ -16,6 +16,13 @@ OUTPUTS.mkdir(exist_ok=True)
 JOBS_DIR.mkdir(exist_ok=True)
 
 # ── API ───────────────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+ANTHROPIC_MAX_TOKENS = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "65536"))
+ANTHROPIC_TIMEOUT = int(os.environ.get("ANTHROPIC_TIMEOUT", "300"))
+ANTHROPIC_RETRANSLATE_TIMEOUT = int(os.environ.get("ANTHROPIC_RETRANSLATE_TIMEOUT", "60"))
+
+# ── Legacy (미사용, 호환용) ───────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
 GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "300"))

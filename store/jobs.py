@@ -87,6 +87,20 @@ def restore_jobs():
                 with _lock:
                     jobs[job_id] = job
                 save_job(job_id)
+        elif status == "ready_to_translate":
+            input_ok = job.get("input_path") and Path(job["input_path"]).exists()
+            ko_srt_ok = (UPLOADS / f"{job_id}.srt").exists()
+            if input_ok and ko_srt_ok:
+                with _lock:
+                    jobs[job_id] = job
+            else:
+                job.update({
+                    "status": "error",
+                    "message": "❌ 복원에 필요한 파일이 부족합니다.",
+                })
+                with _lock:
+                    jobs[job_id] = job
+                save_job(job_id)
         elif status in ("queued", "transcribing", "translating", "reviewing", "encoding"):
             input_path = job.get("input_path")
             has_input = input_path and Path(input_path).exists()

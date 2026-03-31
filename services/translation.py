@@ -1,40 +1,57 @@
 import re
 import requests
-from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TIMEOUT, GEMINI_RETRANSLATE_TIMEOUT
+from config import (
+    ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS,
+    ANTHROPIC_TIMEOUT, ANTHROPIC_RETRANSLATE_TIMEOUT,
+)
 from utils.srt import wrap_subtitle
 from utils.log import get_logger
 from utils.errors import ConfigError, TranslationError, ReviewError
 
 log = get_logger("translation")
 
-_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+_API_URL = "https://api.anthropic.com/v1/messages"
 
 
 def _get_api_key() -> str:
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         raise ConfigError(
-            detail="GEMINI_API_KEY 환경변수 없음",
-            user_message="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.",
+            detail="ANTHROPIC_API_KEY 환경변수 없음",
+            user_message="Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.",
         )
-    return GEMINI_API_KEY
+    return ANTHROPIC_API_KEY
 
 
-def _call_gemini(prompt: str, timeout: int | None = None) -> str:
+def _call_llm(prompt: str, timeout: int | None = None) -> str:
     if timeout is None:
-        timeout = GEMINI_TIMEOUT
+        timeout = ANTHROPIC_TIMEOUT
     resp = requests.post(
-        f"{_API_URL}?key={_get_api_key()}",
-        json={"contents": [{"parts": [{"text": prompt}]}]},
+        _API_URL,
+        headers={
+            "x-api-key": _get_api_key(),
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "output-128k-2025-02-19",
+            "content-type": "application/json",
+        },
+        json={
+            "model": ANTHROPIC_MODEL,
+            "max_tokens": ANTHROPIC_MAX_TOKENS,
+            "messages": [{"role": "user", "content": prompt}],
+        },
         timeout=timeout,
     )
     if not resp.ok:
-        log.error("Gemini API 오류: status=%d body=%s", resp.status_code, resp.text[:500])
+        log.error("Anthropic API 오류: status=%d body=%s", resp.status_code, resp.text[:500])
     resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    data = resp.json()
+    stop_reason = data.get("stop_reason", "")
+    if stop_reason == "max_tokens":
+        log.warning("Claude 응답이 max_tokens에 도달하여 잘렸습니다")
+    return data["content"][0]["text"]
 
 
 def _parse_block_response(response: str, blocks: list[dict]) -> dict[str, str]:
-    """Gemini 응답에서 [idx] 패턴으로 블록별 텍스트 추출."""
+    """LLM 응답에서 [idx] 패턴으로 블록별 텍스트 추출."""
     result: dict[str, str] = {}
     for b in blocks:
         m = re.search(rf"\[{b['idx']}\]\s*(.*?)(?=\n\[|\Z)", response, re.DOTALL)
@@ -52,9 +69,19 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
         "Translate each Korean subtitle segment into natural, concise English subtitles.\n\n"
         "Output rules:\n"
         "- Keep the same [number] marker for every segment\n"
-        "- Translate every segment independently, but keep wording consistent across the full list\n"
         "- Return ONLY translated segments with the same [number] markers\n"
         "- Do not omit, merge, split, reorder, explain, or comment\n\n"
+        "Length constraints (CRITICAL):\n"
+        "- Each segment must be at most 2 lines\n"
+        "- Each line must be no longer than 42 characters\n"
+        "- If a translation is too long, rephrase or shorten it to fit — do not just truncate\n"
+        "- Shorter is better. Viewers read subtitles in real time — every word must earn its place\n\n"
+        "Context and flow:\n"
+        "- Read all segments before translating to understand the full context\n"
+        "- If a Korean segment is a sentence fragment that continues from the previous segment,\n"
+        "  translate it so it reads naturally on its own — rephrase or complete the thought briefly\n"
+        "  rather than translating the fragment literally\n"
+        "- Keep wording consistent across the full list\n\n"
         "Subtitle style rules:\n"
         "- Write natural spoken English suitable for on-screen subtitles\n"
         "- Prioritize clarity, brevity, and readability over literal wording\n"
@@ -74,7 +101,7 @@ def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
         f"{texts}"
     )
     try:
-        response = _call_gemini(prompt)
+        response = _call_llm(prompt)
     except Exception as e:
         if isinstance(e, (ConfigError, TranslationError)):
             raise
@@ -97,21 +124,28 @@ def review_with_gemini(blocks: list[dict]) -> dict[str, str]:
         "1. Any untranslated or partially untranslated Korean\n"
         "2. Awkward, literal, ungrammatical, or unnatural English\n"
         "3. Inconsistent names, terms, tone, or repeated phrasing\n"
-        "4. Overly wordy lines that can be made shorter without losing meaning\n\n"
+        "4. Overly wordy lines that can be made shorter without losing meaning\n"
+        "5. Lines exceeding 42 characters — rephrase to fit, do not just truncate\n"
+        "6. Segments with more than 2 lines — condense into at most 2 lines\n"
+        "7. Sentence fragments that feel incomplete on their own — rephrase so each segment reads naturally in isolation\n\n"
         "Rules:\n"
         "- Keep the same [number] marker for every segment\n"
         "- Return ONLY the corrected segments with the same [number] markers\n"
         "- Do not omit, merge, split, reorder, explain, or comment\n"
+        "- Each segment: at most 2 lines, each line no longer than 42 characters\n"
         "- Use concise, natural spoken English suitable for subtitles\n"
         "- Preserve meaning, tone, intent, and speaker attitude\n"
         "- Fragments are allowed when natural for subtitles; do not force every line into a full sentence\n"
         "- Keep names, key terms, and repeated expressions consistent across segments\n"
-        "- If a segment is too wrong, too incomplete, or too unclear to repair safely, output [RETRANSLATE]\n\n"
+        "- Fix problems yourself whenever possible — rewrite, shorten, rephrase freely\n"
+        "- Length violations, awkward phrasing, or minor inaccuracies are YOUR job to fix, not [RETRANSLATE]\n"
+        "- Output [RETRANSLATE] ONLY when the entire meaning is fundamentally wrong or the Korean was clearly mistranslated in a way you cannot recover without seeing the original\n"
+        "- When in doubt, fix it yourself rather than marking [RETRANSLATE]\n\n"
         "Segments:\n\n"
         f"{texts}"
     )
     try:
-        response = _call_gemini(prompt)
+        response = _call_llm(prompt)
     except Exception as e:
         if isinstance(e, (ConfigError, ReviewError)):
             raise
@@ -144,6 +178,8 @@ def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> 
     prompt += (
         "\nRules:\n"
         "- Return ONLY the translated text, nothing else\n"
+        "- At most 2 lines, each line no longer than 42 characters\n"
+        "- If too long, rephrase or shorten to fit — do not just truncate\n"
         "- Write natural spoken English suitable for subtitles\n"
         "- Prioritize clarity, brevity, and readability over literal wording\n"
         "- Preserve the original meaning, tone, intent, and speaker attitude\n"
@@ -155,7 +191,7 @@ def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> 
         "- Do not leave Korean words untranslated unless they are proper nouns\n"
     )
     try:
-        result = _call_gemini(prompt, timeout=GEMINI_RETRANSLATE_TIMEOUT).strip()
+        result = _call_llm(prompt, timeout=ANTHROPIC_RETRANSLATE_TIMEOUT).strip()
     except Exception as e:
         if isinstance(e, (ConfigError, TranslationError)):
             raise

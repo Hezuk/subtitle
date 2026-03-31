@@ -9,7 +9,7 @@ def test_retranslate_applies_wrap():
     long_text = "This is a very long subtitle line that definitely exceeds the maximum character limit"
     assert len(long_text) > 42
 
-    with patch("services.translation._call_gemini", return_value=f"  {long_text}  "):
+    with patch("services.translation._call_llm", return_value=f"  {long_text}  "):
         result = retranslate_with_gemini("한국어 텍스트", "current", "")
 
     assert "\n" in result
@@ -21,7 +21,7 @@ def test_retranslate_short_text_unchanged():
     """짧은 텍스트는 wrap 후에도 한 줄 유지."""
     short_text = "Hello world"
 
-    with patch("services.translation._call_gemini", return_value=short_text):
+    with patch("services.translation._call_llm", return_value=short_text):
         result = retranslate_with_gemini("안녕", "current", "")
 
     assert result == "Hello world"

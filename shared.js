@@ -5,38 +5,41 @@
 
 // ── 상태 상수 ──────────────────────────────────────────────────────────────────
 const STATUS = Object.freeze({
-  QUEUED:           'queued',
-  TRANSCRIBING:     'transcribing',
-  TRANSLATING:      'translating',
-  REVIEWING:        'reviewing',
-  READY_TO_ENCODE:  'ready_to_encode',
-  ENCODING:         'encoding',
-  DONE:             'done',
-  ERROR:            'error',
-  CANCELLED:        'cancelled',
+  QUEUED:              'queued',
+  TRANSCRIBING:        'transcribing',
+  TRANSLATING:         'translating',
+  REVIEWING:           'reviewing',
+  READY_TO_TRANSLATE:  'ready_to_translate',
+  READY_TO_ENCODE:     'ready_to_encode',
+  ENCODING:            'encoding',
+  DONE:                'done',
+  ERROR:               'error',
+  CANCELLED:           'cancelled',
 });
 
-const TERMINAL = new Set([STATUS.DONE, STATUS.ERROR, STATUS.CANCELLED]);
+const TERMINAL = new Set([STATUS.DONE, STATUS.ERROR, STATUS.CANCELLED, STATUS.READY_TO_TRANSLATE]);
 
 const STATUS_LABELS = Object.freeze({
-  [STATUS.QUEUED]:          '대기 중...',
-  [STATUS.TRANSCRIBING]:    '음성 인식 중...',
-  [STATUS.TRANSLATING]:     '번역 중...',
-  [STATUS.REVIEWING]:       '번역 품질 검토 중...',
-  [STATUS.READY_TO_ENCODE]: '번역 완료',
-  [STATUS.ENCODING]:        '번인 인코딩 중...',
-  [STATUS.DONE]:            '완료',
-  [STATUS.ERROR]:           '오류',
-  [STATUS.CANCELLED]:       '취소됨',
+  [STATUS.QUEUED]:             '대기 중...',
+  [STATUS.TRANSCRIBING]:       '음성 인식 중...',
+  [STATUS.TRANSLATING]:        '번역 중...',
+  [STATUS.REVIEWING]:          '번역 품질 검토 중...',
+  [STATUS.READY_TO_TRANSLATE]: '번역 실패 — 재시도 가능',
+  [STATUS.READY_TO_ENCODE]:    '번역 완료',
+  [STATUS.ENCODING]:           '번인 인코딩 중...',
+  [STATUS.DONE]:               '완료',
+  [STATUS.ERROR]:              '오류',
+  [STATUS.CANCELLED]:          '취소됨',
 });
 
 const STEP_MAP = Object.freeze({
-  [STATUS.TRANSCRIBING]:    'step-transcribe',
-  [STATUS.TRANSLATING]:     'step-translate',
-  [STATUS.REVIEWING]:       'step-review',
-  [STATUS.READY_TO_ENCODE]: 'step-encode',
-  [STATUS.ENCODING]:        'step-encode',
-  [STATUS.DONE]:            'step-done',
+  [STATUS.TRANSCRIBING]:       'step-transcribe',
+  [STATUS.TRANSLATING]:        'step-translate',
+  [STATUS.REVIEWING]:          'step-review',
+  [STATUS.READY_TO_TRANSLATE]: 'step-translate',
+  [STATUS.READY_TO_ENCODE]:    'step-encode',
+  [STATUS.ENCODING]:           'step-encode',
+  [STATUS.DONE]:               'step-done',
 });
 
 const MSG = Object.freeze({

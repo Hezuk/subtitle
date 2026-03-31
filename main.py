@@ -232,6 +232,26 @@ async def cancel(job_id: str):
     return {"ok": True}
 
 
+# ── Retry translate (번역 재시도) ──────────────────────────────────────────────
+@app.post("/retry/{job_id}")
+async def retry_translate(job_id: str):
+    job = load_job(job_id) or {}
+    if job.get("status") != "ready_to_translate":
+        return JSONResponse({"error": "번역 재시도가 가능한 상태가 아닙니다."}, status_code=400)
+    srt_path = UPLOADS / f"{job_id}.srt"
+    if not srt_path.exists():
+        return JSONResponse({"error": "한국어 자막 파일을 찾을 수 없습니다."}, status_code=404)
+    update_job(job_id,
+        status="queued",
+        message="대기 중... (번역 재시도)",
+        progress=30,
+        phase="translate",
+        subphase="queued",
+    )
+    pipeline_executor.submit(run_translate_pipeline, job_id)
+    return {"ok": True}
+
+
 # ── Retranslate (개별 자막 재번역) ─────────────────────────────────────────────
 @app.post("/retranslate/{job_id}")
 async def retranslate(job_id: str, payload: dict):
@@ -293,6 +313,106 @@ def _do_cancel(job_id: str):
     cleanup_job_files(job_id)
 
 
+# ── Translation steps (공통 번역+검토 로직) ──────────────────────────────────
+def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_path: Path,
+                           extra_timings: dict | None = None):
+    """번역 → 검토 → 재번역 → SRT 저장 → ready_to_encode. 공통 로직."""
+    # Step: Translate (30~55%)
+    _check_cancel(job_id)
+    t1 = time.time()
+    update_job(job_id,
+        status="translating",
+        message=f"🌍 {total}개 블록 번역 중...",
+        progress=35,
+        phase="translate",
+        subphase="translating",
+        current=0,
+        total=total,
+        stage_start=t1,
+    )
+
+    all_translated = translate_with_gemini(blocks)
+    _check_cancel(job_id)
+    translate_elapsed = fmt_elapsed(time.time() - t1)
+    with jobs_lock:
+        jobs[job_id].update({
+            "message": f"🌍 번역 완료 ({total}개) | {translate_elapsed}",
+            "progress": 55,
+            "subphase": "done",
+        })
+
+    current_en = {b["idx"]: all_translated.get(b["idx"], b["text"]) for b in blocks}
+
+    # Step: Review — 품질 검토 + 재번역 (55~78%)
+    _check_cancel(job_id)
+    t2 = time.time()
+    for attempt in range(MAX_RETRIES):
+        _check_cancel(job_id)
+        attempt_label = f" ({attempt+1}/{MAX_RETRIES})" if attempt > 0 else ""
+        update_job(job_id,
+            status="reviewing",
+            message=f"🔍 번역 품질 검토 중...{attempt_label}",
+            progress=60 + attempt * 6,
+            phase="review",
+            subphase="reviewing",
+            stage_start=time.time(),
+        )
+
+        en_blocks_list = [
+            {"idx": b["idx"], "timestamp": b["timestamp"], "text": current_en[b["idx"]]}
+            for b in blocks
+        ]
+        reviewed = review_with_gemini(en_blocks_list)
+
+        for idx, text in reviewed.items():
+            if text != "__RETRANSLATE__":
+                current_en[idx] = text
+
+        bad_idxs = {idx for idx, text in reviewed.items() if text == "__RETRANSLATE__"}
+
+        if not bad_idxs:
+            break
+
+        if attempt < MAX_RETRIES - 1:
+            update_job(job_id,
+                message=f"🔄 불량 {len(bad_idxs)}개 재번역 중... ({attempt+2}/{MAX_RETRIES}회차)",
+                progress=66 + attempt * 6,
+                subphase="retranslating",
+                stage_start=time.time(),
+            )
+            bad_ko_blocks = [b for b in blocks if b["idx"] in bad_idxs]
+            retranslated = translate_with_gemini(bad_ko_blocks)
+            for idx, text in retranslated.items():
+                current_en[idx] = text
+
+    review_elapsed = fmt_elapsed(time.time() - t2)
+    with jobs_lock:
+        jobs[job_id].update({
+            "message": f"✅ 검토 완료 ({total}개) | {review_elapsed}",
+            "progress": 78,
+            "subphase": "done",
+        })
+
+    en_lines = []
+    for b in blocks:
+        text = current_en.get(b["idx"], b["text"])
+        en_lines.append(f"{b['idx']}\n{b['timestamp']}\n{text}\n")
+    en_srt_path.write_text("\n".join(en_lines), encoding="utf-8")
+
+    # 번역+검토 완료 — 사용자 확인 대기
+    timings = {"translate": translate_elapsed, "review": review_elapsed}
+    if extra_timings:
+        timings = {**extra_timings, **timings}
+    update_job(job_id,
+        status="ready_to_encode",
+        message="✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
+        progress=80,
+        phase="ready",
+        subphase="waiting",
+        timings=timings,
+    )
+
+
 # ── Pipeline: 음성인식 + 번역 ──────────────────────────────────────────────────
 def run_pipeline(job_id: str, input_path: str):
     srt_path = UPLOADS / f"{job_id}.srt"
@@ -331,115 +451,80 @@ def run_pipeline(job_id: str, input_path: str):
         total = len(blocks)
         transcribe_elapsed = fmt_elapsed(time.time() - t0)
 
-        # Step 2: Translate — Gemini 번역 (30~55%)
-        _check_cancel(job_id)
-        t1 = time.time()
-        update_job(job_id,
-            status="translating",
-            message=f"🌍 {total}개 블록 번역 중... (감지: {detected_lang}) | 음성인식 {transcribe_elapsed}",
-            progress=35,
-            phase="translate",
-            subphase="translating",
-            current=0,
-            total=total,
-            stage_start=t1,
-        )
+        update_job(job_id, detected_lang=detected_lang)
 
-        all_translated = translate_with_gemini(blocks)
-        _check_cancel(job_id)
-        translate_elapsed = fmt_elapsed(time.time() - t1)
-        with jobs_lock:
-            jobs[job_id].update({
-                "message": f"🌍 번역 완료 ({total}개) | {translate_elapsed}",
-                "progress": 55,
-                "subphase": "done",
-            })
-
-        current_en = {b["idx"]: all_translated.get(b["idx"], b["text"]) for b in blocks}
-
-        # Step 3: Review — 품질 검토 + 재번역 (55~78%)
-        _check_cancel(job_id)
-        t2 = time.time()
-        for attempt in range(MAX_RETRIES):
-            _check_cancel(job_id)
-            attempt_label = f" ({attempt+1}/{MAX_RETRIES})" if attempt > 0 else ""
-            update_job(job_id,
-                status="reviewing",
-                message=f"🔍 번역 품질 검토 중...{attempt_label}",
-                progress=60 + attempt * 6,
-                phase="review",
-                subphase="reviewing",
-                stage_start=time.time(),
-            )
-
-            en_blocks_list = [
-                {"idx": b["idx"], "timestamp": b["timestamp"], "text": current_en[b["idx"]]}
-                for b in blocks
-            ]
-            reviewed = review_with_gemini(en_blocks_list)
-
-            for idx, text in reviewed.items():
-                if text != "__RETRANSLATE__":
-                    current_en[idx] = text
-
-            bad_idxs = {idx for idx, text in reviewed.items() if text == "__RETRANSLATE__"}
-
-            if not bad_idxs:
-                break
-
-            if attempt < MAX_RETRIES - 1:
-                update_job(job_id,
-                    message=f"🔄 불량 {len(bad_idxs)}개 재번역 중... ({attempt+2}/{MAX_RETRIES}회차)",
-                    progress=66 + attempt * 6,
-                    subphase="retranslating",
-                    stage_start=time.time(),
-                )
-                bad_ko_blocks = [b for b in blocks if b["idx"] in bad_idxs]
-                retranslated = translate_with_gemini(bad_ko_blocks)
-                for idx, text in retranslated.items():
-                    current_en[idx] = text
-
-        review_elapsed = fmt_elapsed(time.time() - t2)
-        with jobs_lock:
-            jobs[job_id].update({
-                "message": f"✅ 검토 완료 ({total}개) | {review_elapsed}",
-                "progress": 78,
-                "subphase": "done",
-            })
-
-        en_lines = []
-        for b in blocks:
-            text = current_en.get(b["idx"], b["text"])
-            en_lines.append(f"{b['idx']}\n{b['timestamp']}\n{text}\n")
-        en_srt_path.write_text("\n".join(en_lines), encoding="utf-8")
-
-        # 번역+검토 완료 — 사용자 확인 대기
-        update_job(job_id,
-            status="ready_to_encode",
-            message="✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
-            progress=80,
-            phase="ready",
-            subphase="waiting",
-            detected_lang=detected_lang,
-            timings={
-                "transcribe": transcribe_elapsed,
-                "translate": translate_elapsed,
-                "review": review_elapsed,
-            },
-        )
+        _run_translation_steps(job_id, blocks, total, en_srt_path,
+                               extra_timings={"transcribe": transcribe_elapsed})
 
     except CancelledError:
         _do_cancel(job_id)
 
     except SubtitleError as e:
         log.error("job=%s 파이프라인 실패 (%s): %s", job_id, type(e).__name__, e.detail)
-        update_job(job_id, status="error", message=f"❌ {e.user_message}")
-        cleanup_job_files(job_id)
+        if srt_path.exists():
+            # 한국어 자막이 이미 생성된 상태 → 번역만 재시도 가능
+            update_job(job_id,
+                status="ready_to_translate",
+                message=f"❌ {e.user_message} — 번역을 다시 시도할 수 있습니다.",
+                progress=30,
+                phase="translate",
+                subphase="failed",
+            )
+        else:
+            update_job(job_id, status="error", message=f"❌ {e.user_message}")
+            cleanup_job_files(job_id)
 
     except Exception as e:
         log.error("job=%s 파이프라인 예기치 않은 오류: %s", job_id, e, exc_info=True)
-        update_job(job_id, status="error", message="❌ 예기치 않은 오류가 발생했습니다. 다시 시도해주세요.")
-        cleanup_job_files(job_id)
+        if srt_path.exists():
+            update_job(job_id,
+                status="ready_to_translate",
+                message="❌ 예기치 않은 오류가 발생했습니다. 번역을 다시 시도할 수 있습니다.",
+                progress=30,
+                phase="translate",
+                subphase="failed",
+            )
+        else:
+            update_job(job_id, status="error", message="❌ 예기치 않은 오류가 발생했습니다. 다시 시도해주세요.")
+            cleanup_job_files(job_id)
+
+
+# ── Translate pipeline (번역 재시도용) ─────────────────────────────────────────
+def run_translate_pipeline(job_id: str):
+    """한국어 SRT가 이미 존재할 때, 번역 단계부터 재실행."""
+    srt_path = UPLOADS / f"{job_id}.srt"
+    en_srt_path = UPLOADS / f"{job_id}_en.srt"
+
+    try:
+        _check_cancel(job_id)
+        srt_content = srt_path.read_text(encoding="utf-8")
+        blocks = parse_srt(srt_content)
+        total = len(blocks)
+
+        _run_translation_steps(job_id, blocks, total, en_srt_path)
+
+    except CancelledError:
+        _do_cancel(job_id)
+
+    except SubtitleError as e:
+        log.error("job=%s 번역 재시도 실패 (%s): %s", job_id, type(e).__name__, e.detail)
+        update_job(job_id,
+            status="ready_to_translate",
+            message=f"❌ {e.user_message} — 번역을 다시 시도할 수 있습니다.",
+            progress=30,
+            phase="translate",
+            subphase="failed",
+        )
+
+    except Exception as e:
+        log.error("job=%s 번역 재시도 예기치 않은 오류: %s", job_id, e, exc_info=True)
+        update_job(job_id,
+            status="ready_to_translate",
+            message="❌ 예기치 않은 오류가 발생했습니다. 번역을 다시 시도할 수 있습니다.",
+            progress=30,
+            phase="translate",
+            subphase="failed",
+        )
 
 
 # ── Encode: 번인 ──────────────────────────────────────────────────────────────

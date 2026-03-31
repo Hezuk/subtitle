@@ -174,6 +174,15 @@
     #cancel-btn:hover:not(:disabled) { background: rgba(248,113,113,.08); border-color: #f87171; }
     #cancel-btn:disabled { opacity: .4; cursor: not-allowed; }
 
+    #retry-btn {
+      padding: .75rem 2rem; border: none; border-radius: 8px;
+      font-size: .95rem; font-weight: 600; cursor: pointer;
+      background: #fbbf24; color: #09090b;
+      transition: opacity .15s, transform .15s;
+    }
+    #retry-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+    #retry-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
     #encode-btn {
       background: #818cf8;
       color: #fff;
@@ -305,6 +314,7 @@
 
     <div id="review-badge" class="hidden">자막을 확인하고 필요하면 편집한 후 번인을 시작하세요</div>
     <button id="edit-btn" class="hidden">자막 편집</button>
+    <button id="retry-btn" class="hidden">번역 재시도</button>
     <button id="encode-btn" class="hidden">번인 시작</button>
     <div id="done-badge" class="hidden">영어 자막 생성 완료!</div>
     <button id="download-btn" class="hidden">자막 영상 다운로드</button>
@@ -329,6 +339,7 @@
     const reviewBadge  = document.getElementById('review-badge');
     const editBtn      = document.getElementById('edit-btn');
     const cancelBtn    = document.getElementById('cancel-btn');
+    const retryBtn     = document.getElementById('retry-btn');
     const encodeBtn    = document.getElementById('encode-btn');
     const doneBadge    = document.getElementById('done-badge');
     const downloadBtn  = document.getElementById('download-btn');
@@ -447,7 +458,18 @@
       const inProgress = !TERMINAL.has(data.status) && data.status !== STATUS.READY_TO_ENCODE;
       inProgress ? show(cancelBtn) : hide(cancelBtn);
 
+      if (data.status === STATUS.READY_TO_TRANSLATE) {
+        hide(uploadBtn);
+        hide(cancelBtn);
+        showError(data.message);
+        retryBtn.disabled    = false;
+        retryBtn.textContent = '번역 재시도';
+        show(retryBtn);
+        show(resetLink);
+      }
+
       if (data.status === STATUS.READY_TO_ENCODE) {
+        hide(retryBtn);
         hide(uploadBtn);
         show(reviewBadge);
         show(editBtn);
@@ -490,8 +512,26 @@
     }
 
     function guessProgress(status) {
-      return { queued: 2, transcribing: 8, translating: 35, reviewing: 60, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
+      return { queued: 2, transcribing: 8, translating: 35, reviewing: 60, ready_to_translate: 30, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
     }
+
+    // 번역 재시도
+    retryBtn.addEventListener('click', async () => {
+      if (!currentJobId) return;
+      retryBtn.disabled  = true;
+      retryBtn.innerHTML = `<span class="spinner"></span>재시도 중...`;
+      hide(errorBox);
+      try {
+        await apiPost(`/retry/${currentJobId}`);
+        hide(retryBtn);
+        poller = createPoller(currentJobId, updateUI);
+        poller.start();
+      } catch (err) {
+        showError(err.message);
+        retryBtn.disabled    = false;
+        retryBtn.textContent = '번역 재시도';
+      }
+    });
 
     // 편집 창 열기
     let editorWindow = null;
