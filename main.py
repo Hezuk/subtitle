@@ -386,9 +386,9 @@ async def cancel(job_id: str):
         return JSONResponse({"error": "취소할 수 없는 상태입니다."}, status_code=400)
     with jobs_lock:
         jobs[job_id]["cancel_requested"] = True
-    log.info("job=%s 취소 요청", job_id)
-    # ready_to_encode는 실행 중인 프로세스가 없으므로 즉시 취소
-    if status == "ready_to_encode":
+    log.info("job=%s 취소 요청 (status=%s)", job_id, status)
+    # 실행 중인 프로세스가 없는 상태는 즉시 취소
+    if status in ("queued", "ready_to_encode"):
         _do_cancel(job_id)
     return {"ok": True}
 
@@ -500,6 +500,28 @@ def _check_cancel(job_id: str):
         raise CancelledError()
 
 
+def _run_cancellable(job_id: str, fn, *args, poll_interval: float = 0.5, **kwargs):
+    """fn을 별도 스레드에서 실행하면서 취소 요청을 poll_interval마다 확인.
+
+    fn이 완료되면 결과를 반환하고, 취소 요청이 감지되면 CancelledError를 발생시킨다.
+    백그라운드 스레드는 즉시 중단할 수 없지만, shutdown(wait=False)로 대기 없이 반환한다.
+    """
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(fn, *args, **kwargs)
+    try:
+        while True:
+            try:
+                result = future.result(timeout=poll_interval)
+                pool.shutdown(wait=False)
+                return result
+            except FuturesTimeout:
+                _check_cancel(job_id)
+    except:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+
+
 def _do_cancel(job_id: str):
     """취소 상태로 전환 + 파일 정리."""
     log.info("job=%s 취소 처리 완료", job_id)
@@ -561,7 +583,7 @@ def _run_refine_step(job_id: str, blocks: list[dict], total: int, translation_mo
         stage_start=t_refine,
     )
 
-    refined = refine_blocks(blocks, translation_model)
+    refined = _run_cancellable(job_id, refine_blocks, blocks, translation_model)
     _check_cancel(job_id)
 
     # 원본 KO SRT 보존 (최초 1회만)
@@ -603,7 +625,7 @@ def _run_review_ko_step(job_id: str, blocks: list[dict], total: int, translation
         stage_start=t_review,
     )
 
-    reviewed = review_ko_blocks(blocks, translation_model)
+    reviewed = _run_cancellable(job_id, review_ko_blocks, blocks, translation_model)
     _check_cancel(job_id)
 
     reviewed_blocks = [{**b, "text": reviewed.get(b["idx"], b["text"])} for b in blocks]
@@ -654,7 +676,7 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
         stage_start=t1,
     )
 
-    all_translated = translate_blocks(blocks, translation_model)
+    all_translated = _run_cancellable(job_id, translate_blocks, blocks, translation_model)
     _check_cancel(job_id)
     translate_elapsed = fmt_elapsed(time.time() - t1)
     with jobs_lock:
@@ -685,7 +707,7 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
             {"idx": b["idx"], "timestamp": b["timestamp"], "text": current_en[b["idx"]]}
             for b in blocks
         ]
-        reviewed = review_blocks(en_blocks_list, translation_model)
+        reviewed = _run_cancellable(job_id, review_blocks, en_blocks_list, translation_model)
 
         for idx, text in reviewed.items():
             if text != "__RETRANSLATE__":
@@ -704,7 +726,7 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
                 stage_start=time.time(),
             )
             bad_ko_blocks = [b for b in blocks if b["idx"] in bad_idxs]
-            retranslated = translate_blocks(bad_ko_blocks, translation_model)
+            retranslated = _run_cancellable(job_id, translate_blocks, bad_ko_blocks, translation_model)
             for idx, text in retranslated.items():
                 current_en[idx] = text
 
@@ -768,7 +790,10 @@ def run_pipeline(job_id: str, input_path: str):
                     "subphase": "transcribing",
                 })
 
-        result = transcribe(input_path, model_name=whisper_model, on_model_ready=on_model_ready)
+        result = _run_cancellable(
+            job_id, transcribe, input_path,
+            model_name=whisper_model, on_model_ready=on_model_ready,
+        )
         _check_cancel(job_id)
         detected_lang = result.get("language", "unknown")
         translation_model = _get_job_translation_model(job_id)

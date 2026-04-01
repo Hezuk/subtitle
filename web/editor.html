@@ -401,14 +401,29 @@
     let enBlocks = [], koBlocks = [];
     let origEn = [], origKo = [];
     let lang = 'en';   // 'en' | 'ko' | 'both'
+    let hasEnglishSubtitles = true;
+
+    function getPrimaryList(targetLang, enList = enBlocks, koList = koBlocks) {
+      if (targetLang === 'ko') return koList;
+      if (targetLang === 'both') return enList.length ? enList : koList;
+      return enList;
+    }
+
+    function updateLangTabs() {
+      document.querySelectorAll('.lang-tab').forEach(tab => {
+        const needsEnglish = tab.dataset.lang === 'en' || tab.dataset.lang === 'both';
+        tab.disabled = !hasEnglishSubtitles && needsEnglish;
+        tab.title = !hasEnglishSubtitles && needsEnglish ? '영어 번역이 완료된 뒤 사용할 수 있습니다.' : '';
+        tab.className = 'lang-tab' + (tab.dataset.lang === lang ? ` active-${lang}` : '');
+      });
+    }
 
     // ── 언어 탭 ──
     document.querySelectorAll('.lang-tab').forEach(tab => {
       tab.addEventListener('click', () => {
+        if (tab.disabled) return;
         lang = tab.dataset.lang;
-        document.querySelectorAll('.lang-tab').forEach(t => {
-          t.className = 'lang-tab' + (t.dataset.lang === lang ? ` active-${lang}` : '');
-        });
+        updateLangTabs();
         applySearch(searchInput.value.trim());
       });
     });
@@ -417,14 +432,21 @@
     async function load() {
       if (!jobId) { document.getElementById('empty-msg').textContent = LABELS.INVALID_ACCESS; return; }
       try {
-        const [dataEn, dataKo] = await Promise.all([
-          api(`/subtitles/${jobId}`),
-          api(`/subtitles_ko/${jobId}`),
-        ]);
+        const dataKo = await api(`/subtitles_ko/${jobId}`);
+        let dataEn = { blocks: [] };
+        try {
+          dataEn = await api(`/subtitles/${jobId}`);
+          hasEnglishSubtitles = true;
+        } catch (e) {
+          if (!String(e.message || '').includes('자막을 찾을 수 없습니다')) throw e;
+          hasEnglishSubtitles = false;
+        }
         enBlocks = dataEn.blocks || [];
         koBlocks = dataKo.blocks || [];
+        if (!hasEnglishSubtitles && lang !== 'ko') lang = 'ko';
         origEn = JSON.parse(JSON.stringify(enBlocks));
         origKo = JSON.parse(JSON.stringify(koBlocks));
+        updateLangTabs();
         render(enBlocks, koBlocks);
       } catch (e) {
         document.getElementById('empty-msg').textContent = LABELS.LOAD_FAILED + ': ' + e.message;
@@ -434,7 +456,7 @@
     // ── 렌더링 ──
     function render(enList, koList) {
       blockList.innerHTML = '';
-      const list = lang === 'ko' ? koList : enList;
+      const list = getPrimaryList(lang, enList, koList);
       if (!list.length) {
         blockList.innerHTML = `<div id="empty-msg">${LABELS.NO_SUBTITLES}</div>`;
         return;
@@ -613,7 +635,7 @@
       saveStatus.textContent = LABELS.SAVING;
       try {
         const tasks = [];
-        if (lang === 'en' || lang === 'both') {
+        if (hasEnglishSubtitles && (lang === 'en' || lang === 'both')) {
           tasks.push(apiPost(`/subtitles/${jobId}`, { blocks: enBlocks }));
         }
         if (lang === 'ko' || lang === 'both') {
@@ -658,7 +680,7 @@
       const enList = q ? enBlocks.filter(b => b.text.toLowerCase().includes(q.toLowerCase())) : enBlocks;
       const koList = q ? koBlocks.filter(b => b.text.toLowerCase().includes(q.toLowerCase())) : koBlocks;
       const idxSet = new Set([...enList.map(b=>b.idx), ...koList.map(b=>b.idx)]);
-      const filtered = (lang === 'ko' ? koBlocks : enBlocks).filter(b => idxSet.has(b.idx));
+      const filtered = getPrimaryList(lang).filter(b => idxSet.has(b.idx));
       matchCount.textContent = q ? `${filtered.length}개 일치` : '';
       render(
         q ? enBlocks.filter(b => idxSet.has(b.idx)) : enBlocks,

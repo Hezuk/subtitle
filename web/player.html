@@ -435,6 +435,8 @@
       lastStatus = data.status;
 
       if (data.status === STATUS.READY_TO_REVIEW_KO) {
+        hasEnglishSubtitle = false;
+        updateLangButtons();
         show(btnEdit);
         currentSource = 'original';
         hide(finalSourceBtn);
@@ -447,6 +449,8 @@
       }
 
       if (data.status === STATUS.READY_TO_ENCODE) {
+        hasEnglishSubtitle = true;
+        updateLangButtons();
         currentSource = 'original';
         hide(finalSourceBtn);
         show(sourceRow);
@@ -454,6 +458,8 @@
       }
 
       if (data.status === STATUS.ENCODING) {
+        hasEnglishSubtitle = true;
+        updateLangButtons();
         hide(langRow);
         show(sourceRow);
         hide(finalSourceBtn);
@@ -462,6 +468,8 @@
       }
 
       if (data.status === STATUS.DONE) {
+        hasEnglishSubtitle = true;
+        updateLangButtons();
         show(sourceRow);
         show(finalSourceBtn);
         setSource('final');
@@ -524,6 +532,17 @@
 
     // ── 자막 언어 선택 ──
     let currentLang = 'en';
+    let hasEnglishSubtitle = true;
+
+    function updateLangButtons() {
+      const enBtn = document.querySelector('.lang-btn[data-lang="en"]');
+      const bothBtn = document.querySelector('.lang-btn[data-lang="both"]');
+      enBtn.classList.toggle('hidden', !hasEnglishSubtitle);
+      bothBtn.classList.toggle('hidden', !hasEnglishSubtitle);
+      if (!hasEnglishSubtitle && (currentLang === 'en' || currentLang === 'both')) {
+        currentLang = 'ko';
+      }
+    }
 
     function subtitleUrl(lang) {
       const t = Date.now();
@@ -558,6 +577,8 @@
     document.querySelectorAll('.lang-btn').forEach(btn => {
       btn.addEventListener('click', () => applyLang(btn.dataset.lang));
     });
+
+    updateLangButtons();
 
     document.querySelectorAll('.source-btn').forEach(btn => {
       btn.addEventListener('click', () => {
