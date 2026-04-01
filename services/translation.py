@@ -503,25 +503,74 @@ def retranslate_block(ko_text: str, current_en: str, requirement: str, translati
     return wrap_subtitle(result)
 
 
-def translate_with_claude(blocks: list[dict]) -> dict[str, str]:
-    return translate_blocks(blocks, "claude")
+def _refine_batch(blocks: list[dict], translation_model: str, context: str = "") -> dict[str, str]:
+    """단일 배치 한국어 자막 다듬기."""
+    texts = "\n---\n".join(f"[{b['idx']}] {b['text']}" for b in blocks)
+    context_section = (
+        "Previously refined segments (for context and consistency only — do NOT output these):\n"
+        f"{context}\n\n"
+    ) if context else ""
+    prompt = (
+        "You are a Korean subtitle editor preparing ASR-derived Korean subtitles for downstream English translation.\n"
+        "Refine each segment so it is natural as Korean subtitles and maximally clear for accurate English translation.\n\n"
+        + context_section +
+        "Primary goal:\n"
+        "- The refined Korean will be translated into English next\n"
+        "- Remove ASR noise and ambiguity that would cause mistranslation\n"
+        "- Keep every segment faithful to what the speaker actually said\n\n"
+        "Fix these ASR issues:\n"
+        "1. Transcription errors — homophones, similar-sounding words, and garbled phrases\n"
+        "2. Filler words and stutters — remove empty hesitations such as '음', '어', '그', '아', and repeated words\n"
+        "3. Sentence fragments — reconstruct them into short, coherent clauses using nearby context\n"
+        "4. Spacing, punctuation, and broken word boundaries\n\n"
+        "Make the Korean translation-ready:\n"
+        "- Prefer clear, standard spoken Korean over messy ASR phrasing\n"
+        "- If a subject, object, or referent is clearly recoverable from context, restore it briefly to reduce ambiguity for English translation\n"
+        "- Keep names, titles, numbers, units, key terms, and honorific/politeness level accurate and consistent\n"
+        "- Preserve speaker intent, tone, and attitude; remove only meaningless fillers, not meaningful content\n"
+        "- Make each segment understandable on its own when possible, but stay concise and subtitle-friendly\n"
+        "- Avoid overly literary rewriting; keep the spoken register unless the source is clearly formal\n\n"
+        "Rules:\n"
+        "- Keep the same [number] marker for every segment\n"
+        "- Return ONLY the segments listed under 'Segments' below — do NOT re-output context segments\n"
+        "- Do not omit, merge, split, reorder, explain, or comment\n"
+        "- Do not translate into English\n"
+        "- Preserve original meaning — do not add information not supported by the source or nearby context\n"
+        "- When uncertain, make the smallest safe correction and keep the original meaning\n"
+        "- Output natural, translation-ready Korean suitable for subtitles\n\n"
+        "Segments:\n\n"
+        f"{texts}"
+    )
+    try:
+        response = _call_llm(prompt, translation_model)
+    except Exception as e:
+        if isinstance(e, (ConfigError, TranslationError)):
+            raise
+        log.error("%s 한국어 다듬기 API 호출 실패: %s", MODEL_LABELS[translation_model], e, exc_info=True)
+        raise _provider_error(e, translation_model, TranslationError) from e
+    raw = _parse_block_response(response, blocks)
+    return {idx: wrap_subtitle(text) for idx, text in raw.items()}
 
 
-def translate_with_gemini(blocks: list[dict]) -> dict[str, str]:
-    return translate_blocks(blocks, "gemini")
-
-
-def review_with_claude(blocks: list[dict]) -> dict[str, str]:
-    return review_blocks(blocks, "claude")
-
-
-def review_with_gemini(blocks: list[dict]) -> dict[str, str]:
-    return review_blocks(blocks, "gemini")
-
-
-def retranslate_with_claude(ko_text: str, current_en: str, requirement: str) -> str:
-    return retranslate_block(ko_text, current_en, requirement, "claude")
-
-
-def retranslate_with_gemini(ko_text: str, current_en: str, requirement: str) -> str:
-    return retranslate_block(ko_text, current_en, requirement, "gemini")
+def refine_blocks(blocks: list[dict], translation_model: str) -> dict[str, str]:
+    """한국어 자막 다듬기 (ASR 오류 수정, 필러 제거)."""
+    translation_model = normalize_translation_model(translation_model)
+    batch_size = _get_translate_batch_size(translation_model)
+    total = len(blocks)
+    log.info("한국어 다듬기 시작: %d개 블록 (배치: %d, %s)", total, batch_size, MODEL_LABELS[translation_model])
+    result: dict[str, str] = {}
+    prev_blocks: list[dict] = []
+    for i in range(0, total, batch_size):
+        batch = blocks[i:i + batch_size]
+        batch_num = i // batch_size + 1
+        total_batches = (total + batch_size - 1) // batch_size
+        log.info(
+            "한국어 다듬기 배치 %d/%d (블록 %d~%d)",
+            batch_num, total_batches, i + 1, min(i + batch_size, total),
+        )
+        context = _format_context(result, prev_blocks, _CONTEXT_TAIL) if prev_blocks else ""
+        batch_result = _refine_batch(batch, translation_model, context=context)
+        result.update(batch_result)
+        prev_blocks = batch
+    log.info("한국어 다듬기 완료: %d개 블록", len(result))
+    return result

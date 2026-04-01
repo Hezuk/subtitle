@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 import aiofiles
 
 from config import (
-    BASE, UPLOADS, OUTPUTS,
+    WEB_DIR, UPLOADS, OUTPUTS,
     MAX_UPLOAD_MB, ALLOWED_EXTS,
     MAX_BLOCKS, MAX_TEXT_LEN, MAX_REQUIREMENT_LEN, MAX_RETRIES,
 )
@@ -26,6 +26,7 @@ from services.transcription import (
 from services.translation import (
     MODEL_LABELS,
     normalize_translation_model,
+    refine_blocks,
     retranslate_block,
     review_blocks,
     translate_blocks,
@@ -41,6 +42,17 @@ encode_executor   = ThreadPoolExecutor(max_workers=1)
 app = FastAPI()
 
 
+def _safe_path(requested: str, allowed_dir: Path) -> Path | None:
+    """경로가 허용된 디렉토리 안에 있는지 검증. 벗어나면 None 반환."""
+    try:
+        p = Path(requested).resolve()
+        if p.is_relative_to(allowed_dir.resolve()):
+            return p
+    except (ValueError, OSError):
+        pass
+    return None
+
+
 @app.on_event("startup")
 async def startup():
     restore_jobs()
@@ -50,19 +62,19 @@ async def startup():
 # ── Frontend ──────────────────────────────────────────────────────────────────
 @app.get("/")
 async def index():
-    return FileResponse(BASE / "index.html")
+    return FileResponse(WEB_DIR / "index.html")
 
 @app.get("/player")
 async def player():
-    return FileResponse(BASE / "player.html")
+    return FileResponse(WEB_DIR / "player.html")
 
 @app.get("/editor")
 async def editor():
-    return FileResponse(BASE / "editor.html")
+    return FileResponse(WEB_DIR / "editor.html")
 
 @app.get("/shared.js")
 async def shared_js():
-    return FileResponse(BASE / "shared.js", media_type="application/javascript")
+    return FileResponse(WEB_DIR / "shared.js", media_type="application/javascript")
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -137,6 +149,7 @@ async def upload(
     subtitle_file: UploadFile | None = File(None),
     translation_model: str = Form("claude"),
     whisper_model: str = Form(DEFAULT_WHISPER_MODEL),
+    refine_ko: bool = Form(True),
 ):
     if not file.content_type or not file.content_type.startswith("video/"):
         raise HTTPException(400, "동영상 파일만 업로드할 수 있습니다.")
@@ -177,6 +190,7 @@ async def upload(
             "ext": ext,
             "translation_model": translation_model,
             "whisper_model": whisper_model,
+            "refine_ko": refine_ko,
             "progress": 30 if source_has_ko_subtitle else 0,
             "source_has_ko_subtitle": source_has_ko_subtitle,
             "created_at": time.time(),
@@ -302,9 +316,10 @@ async def save_subtitles_ko(job_id: str, payload: dict):
 async def original_video(job_id: str):
     job = load_job(job_id) or {}
     input_path = job.get("input_path")
-    if not input_path or not Path(input_path).exists():
+    safe = _safe_path(input_path, UPLOADS) if input_path else None
+    if not safe or not safe.exists():
         return JSONResponse({"error": "원본 영상을 찾을 수 없습니다."}, status_code=404)
-    return FileResponse(input_path, media_type="video/mp4")
+    return FileResponse(safe, media_type="video/mp4")
 
 
 # ── Encode (번인 시작) ────────────────────────────────────────────────────────
@@ -346,18 +361,24 @@ async def cancel(job_id: str):
 @app.post("/retry/{job_id}")
 async def retry_translate(job_id: str, payload: dict | None = Body(default=None)):
     job = load_job(job_id) or {}
-    if job.get("status") != "ready_to_translate":
-        return JSONResponse({"error": "번역 재시도가 가능한 상태가 아닙니다."}, status_code=400)
+    prev_status = job.get("status")
+    if prev_status not in ("ready_to_translate", "ready_to_review_ko"):
+        return JSONResponse({"error": "번역을 시작할 수 있는 상태가 아닙니다."}, status_code=400)
     srt_path = UPLOADS / f"{job_id}.srt"
     if not srt_path.exists():
         return JSONResponse({"error": "한국어 자막 파일을 찾을 수 없습니다."}, status_code=404)
     payload = payload or {}
     translation_model = _validate_translation_model(payload.get("translation_model") or job.get("translation_model"))
     model_label = MODEL_LABELS[translation_model]
+    queue_msg = (
+        f"대기 중... (번역 시작: {model_label})"
+        if prev_status == "ready_to_review_ko"
+        else f"대기 중... (번역 재시도: {model_label})"
+    )
     update_job(job_id,
         status="queued",
-        message=f"대기 중... (번역 재시도: {model_label})",
-        progress=30,
+        message=queue_msg,
+        progress=45 if prev_status == "ready_to_review_ko" else 30,
         phase="translate",
         subphase="queued",
         translation_model=translation_model,
@@ -414,10 +435,11 @@ async def download(job_id: str):
     if job.get("status") != "done":
         return JSONResponse({"error": "준비되지 않은 상태입니다."}, status_code=400)
     output = job.get("output", "")
-    if not output or not Path(output).exists():
+    safe = _safe_path(output, OUTPUTS) if output else None
+    if not safe or not safe.exists():
         return JSONResponse({"error": "파일을 찾을 수 없습니다."}, status_code=404)
     return FileResponse(
-        output,
+        safe,
         filename="subtitled_english.mp4",
         media_type="video/mp4",
     )
@@ -487,19 +509,66 @@ def _error_fields(err: SubtitleError | Exception) -> dict:
     }
 
 
-# ── Translation steps (공통 번역+검토 로직) ──────────────────────────────────
+# ── Korean refine step (한국어 자막 다듬기 → ready_to_review_ko) ──────────────
+def _run_refine_step(job_id: str, blocks: list[dict], total: int, translation_model: str,
+                     extra_timings: dict | None = None):
+    """한국어 자막 다듬기 단계만 수행. 완료 후 ready_to_review_ko 상태로 전환."""
+    model_label = MODEL_LABELS[translation_model]
+    srt_path = UPLOADS / f"{job_id}.srt"
+    raw_srt_path = UPLOADS / f"{job_id}_ko_raw.srt"
+
+    _check_cancel(job_id)
+    t_refine = time.time()
+    update_job(job_id,
+        status="refining_ko",
+        message=f"✏️ {total}개 한국어 자막 다듬는 중... ({model_label})",
+        progress=32,
+        phase="refine_ko",
+        subphase="refining",
+        stage_start=t_refine,
+    )
+
+    refined = refine_blocks(blocks, translation_model)
+    _check_cancel(job_id)
+
+    # 원본 KO SRT 보존 (최초 1회만)
+    if not raw_srt_path.exists():
+        raw_srt_path.write_text(srt_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    # blocks 업데이트 + 파일 저장
+    refined_blocks = [{**b, "text": refined.get(b["idx"], b["text"])} for b in blocks]
+    save_blocks(srt_path, refined_blocks)
+
+    refine_elapsed = fmt_elapsed(time.time() - t_refine)
+    timings = {**(extra_timings or {}), "refine_ko": refine_elapsed}
+    update_job(job_id,
+        status="ready_to_review_ko",
+        message="✏️ 한국어 자막 다듬기 완료! 자막을 확인한 후 번역을 시작하세요.",
+        progress=45,
+        phase="refine_ko",
+        subphase="waiting",
+        timings=timings,
+        error_reason=None,
+        error_detail=None,
+        next_action=None,
+        retryable=None,
+        error_code=None,
+    )
+
+
+# ── Translation steps (번역+검토 로직) ────────────────────────────────────────
 def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_path: Path,
                            translation_model: str, extra_timings: dict | None = None):
     """번역 → 검토 → 재번역 → SRT 저장 → ready_to_encode. 공통 로직."""
     model_label = MODEL_LABELS[translation_model]
 
-    # Step: Translate (30~55%)
+    # Step: Translate (45~62%)
     _check_cancel(job_id)
     t1 = time.time()
     update_job(job_id,
         status="translating",
         message=f"🌍 {total}개 블록 번역 중... ({model_label})",
-        progress=35,
+        progress=48,
         phase="translate",
         subphase="translating",
         current=0,
@@ -513,13 +582,13 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
     with jobs_lock:
         jobs[job_id].update({
             "message": f"🌍 번역 완료 ({total}개, {model_label}) | {translate_elapsed}",
-            "progress": 55,
+            "progress": 62,
             "subphase": "done",
         })
 
     current_en = {b["idx"]: all_translated.get(b["idx"], b["text"]) for b in blocks}
 
-    # Step: Review — 품질 검토 + 재번역 (55~78%)
+    # Step: Review — 품질 검토 + 재번역 (62~78%)
     _check_cancel(job_id)
     t2 = time.time()
     for attempt in range(MAX_RETRIES):
@@ -528,7 +597,7 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
         update_job(job_id,
             status="reviewing",
             message=f"🔍 번역 품질 검토 중... ({model_label}){attempt_label}",
-            progress=60 + attempt * 6,
+            progress=65 + attempt * 6,
             phase="review",
             subphase="reviewing",
             stage_start=time.time(),
@@ -552,7 +621,7 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
         if attempt < MAX_RETRIES - 1:
             update_job(job_id,
                 message=f"🔄 불량 {len(bad_idxs)}개 재번역 중... ({model_label}, {attempt+2}/{MAX_RETRIES}회차)",
-                progress=66 + attempt * 6,
+                progress=71 + attempt * 6,
                 subphase="retranslating",
                 stage_start=time.time(),
             )
@@ -576,9 +645,7 @@ def _run_translation_steps(job_id: str, blocks: list[dict], total: int, en_srt_p
     en_srt_path.write_text("\n".join(en_lines), encoding="utf-8")
 
     # 번역+검토 완료 — 사용자 확인 대기
-    timings = {"translate": translate_elapsed, "review": review_elapsed}
-    if extra_timings:
-        timings = {**extra_timings, **timings}
+    timings = {**(extra_timings or {}), "translate": translate_elapsed, "review": review_elapsed}
     update_job(job_id,
         status="ready_to_encode",
         message="✅ 번역 및 품질 검토 완료! 자막을 확인한 후 번인을 시작하세요.",
@@ -636,9 +703,14 @@ def run_pipeline(job_id: str, input_path: str):
 
         update_job(job_id, detected_lang=detected_lang)
 
-        _run_translation_steps(job_id, blocks, total, en_srt_path,
-                               translation_model=translation_model,
-                               extra_timings={"transcribe": transcribe_elapsed})
+        refine_ko = load_job(job_id).get("refine_ko", True)
+        if refine_ko:
+            _run_refine_step(job_id, blocks, total, translation_model,
+                             extra_timings={"transcribe": transcribe_elapsed})
+        else:
+            _run_translation_steps(job_id, blocks, total, en_srt_path,
+                                   translation_model=translation_model,
+                                   extra_timings={"transcribe": transcribe_elapsed})
 
     except CancelledError:
         _do_cancel(job_id)
@@ -688,7 +760,21 @@ def run_translate_pipeline(job_id: str):
         total = len(blocks)
         translation_model = _get_job_translation_model(job_id)
 
-        _run_translation_steps(job_id, blocks, total, en_srt_path, translation_model=translation_model)
+        job = load_job(job_id) or {}
+        refine_ko = job.get("refine_ko", True)
+        raw_srt_path = UPLOADS / f"{job_id}_ko_raw.srt"
+        already_refined = raw_srt_path.exists()
+
+        if refine_ko and not already_refined:
+            # 아직 다듬지 않은 경우 → 다듬기 후 ready_to_review_ko에서 대기
+            _run_refine_step(job_id, blocks, total, translation_model,
+                             extra_timings=job.get("timings"))
+        else:
+            # 이미 다듬었거나 refine_ko 비활성 → 번역 진행
+            # 기존 timings 유지 (transcribe/refine_ko 등)
+            _run_translation_steps(job_id, blocks, total, en_srt_path,
+                                   translation_model=translation_model,
+                                   extra_timings=job.get("timings"))
 
     except CancelledError:
         _do_cancel(job_id)

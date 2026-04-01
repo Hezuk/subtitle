@@ -189,6 +189,23 @@
       color: #71717a;
       line-height: 1.5;
     }
+    .refine-toggle {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      cursor: pointer;
+      font-size: .875rem;
+      color: #e4e4e7;
+      user-select: none;
+    }
+    .refine-toggle input[type="checkbox"] {
+      width: 1rem;
+      height: 1rem;
+      accent-color: #818cf8;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .refine-toggle input:disabled { opacity: .5; cursor: not-allowed; }
 
     button {
       width: 100%;
@@ -490,6 +507,17 @@
       </div>
     </div>
 
+    <div class="model-picker">
+      <label class="model-picker-label">한국어 자막 다듬기</label>
+      <div class="model-picker-row">
+        <label class="refine-toggle">
+          <input type="checkbox" id="refine-ko-toggle" checked aria-label="한국어 자막 다듬기" />
+          <span>번역 전 음성인식 오류·필러·단편 문장 자동 수정</span>
+        </label>
+        <div class="model-picker-hint">Whisper 인식 결과의 품질이 낮을 때 효과적입니다. 처리 시간이 다소 증가합니다.</div>
+      </div>
+    </div>
+
     <button id="upload-btn" disabled aria-label="자막 생성 시작">자막 생성 시작</button>
     <button id="cancel-btn" class="hidden" aria-label="작업 취소">취소</button>
     <button id="open-player-btn" class="hidden" aria-label="플레이어 창 열기">플레이어 창 열기</button>
@@ -510,6 +538,7 @@
       </div>
     </div>
 
+    <div id="ko-review-badge" class="hidden">한국어 자막을 확인하고 필요하면 편집한 후 번역을 시작하세요</div>
     <div id="review-badge" class="hidden">자막을 확인하고 필요하면 편집한 후 번인을 시작하세요</div>
     <button id="edit-btn" class="hidden">자막 편집</button>
     <button id="retry-btn" class="hidden">번역 재시도</button>
@@ -543,11 +572,13 @@
     const clearSubtitleBtn = document.getElementById('clear-subtitle-btn');
     const modelSelect  = document.getElementById('model-select');
     const whisperModelSelect = document.getElementById('whisper-model-select');
+    const refineKoToggle = document.getElementById('refine-ko-toggle');
     const uploadBtn    = document.getElementById('upload-btn');
     const openPlayerBtn= document.getElementById('open-player-btn');
     const progressSec  = document.getElementById('progress-section');
     const statusMsg    = document.getElementById('status-msg');
     const progressFill = document.getElementById('progress-fill');
+    const koReviewBadge = document.getElementById('ko-review-badge');
     const reviewBadge  = document.getElementById('review-badge');
     const editBtn      = document.getElementById('edit-btn');
     const cancelBtn    = document.getElementById('cancel-btn');
@@ -566,6 +597,7 @@
     let poller       = null;
     let playerWindow = null;
     let playerOpened = false;
+    let koReviewOpened = false;
 
     function show(el) { el.classList.remove('hidden'); }
     function hide(el) { el.classList.add('hidden'); }
@@ -690,6 +722,7 @@
       if (uploadBtn._subtitleFile) form.append('subtitle_file', uploadBtn._subtitleFile);
       form.append('translation_model', modelSelect.value);
       form.append('whisper_model', whisperModelSelect.value);
+      form.append('refine_ko', refineKoToggle.checked ? 'true' : 'false');
       try {
         const data = await api('/upload', { method: 'POST', body: form });
         currentJobId = data.job_id;
@@ -697,6 +730,7 @@
         whisperModelSelect.value = data.whisper_model || whisperModelSelect.value;
         modelSelect.disabled = true;
         whisperModelSelect.disabled = true;
+        refineKoToggle.disabled = true;
         setupBroadcast(currentJobId);
         poller = createPoller(currentJobId, updateUI);
         poller.start();
@@ -704,6 +738,7 @@
         showError(err.message);
         syncSelectedFiles();
         modelSelect.disabled  = false;
+        refineKoToggle.disabled = false;
       }
     });
 
@@ -726,6 +761,20 @@
       // 취소 버튼: 진행 중일 때만 표시
       const inProgress = !TERMINAL.has(data.status) && data.status !== STATUS.READY_TO_ENCODE;
       inProgress ? show(cancelBtn) : hide(cancelBtn);
+
+      if (data.status === STATUS.READY_TO_REVIEW_KO) {
+        hide(uploadBtn);
+        hide(cancelBtn);
+        show(koReviewBadge);
+        show(editBtn);
+        retryBtn.disabled    = false;
+        retryBtn.textContent = '번역 시작';
+        show(retryBtn);
+        show(archivePanel);
+        updateArchiveActions();
+        show(resetLink);
+        if (!koReviewOpened) { koReviewOpened = true; openPlayer(); }
+      }
 
       if (data.status === STATUS.READY_TO_TRANSLATE) {
         if (data.translation_model) modelSelect.value = data.translation_model;
@@ -786,6 +835,7 @@
         show(resetLink);
         uploadBtn.disabled    = false;
         modelSelect.disabled  = false;
+        refineKoToggle.disabled = false;
         if (data.translation_model) modelSelect.value = data.translation_model;
         if (data.whisper_model) whisperModelSelect.value = data.whisper_model;
         uploadBtn.textContent = LABELS.NEW_FILE;
@@ -795,26 +845,31 @@
     }
 
     function guessProgress(status) {
-      return { queued: 2, transcribing: 8, translating: 35, reviewing: 60, ready_to_translate: 30, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
+      return { queued: 2, transcribing: 8, refining_ko: 35, ready_to_review_ko: 45, translating: 50, reviewing: 65, ready_to_translate: 30, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
     }
 
     // 번역 재시도
     retryBtn.addEventListener('click', async () => {
       if (!currentJobId) return;
+      const prevRetryLabel = retryBtn.textContent;
+      const isKoReview = !koReviewBadge.classList.contains('hidden');
       retryBtn.disabled  = true;
-      retryBtn.innerHTML = `<span class="spinner"></span>재시도 중...`;
+      retryBtn.innerHTML = `<span class="spinner"></span>번역 준비 중...`;
       hide(errorBox);
+      hide(koReviewBadge);
       try {
         const data = await apiPost(`/retry/${currentJobId}`, { translation_model: modelSelect.value });
         if (data.translation_model) modelSelect.value = data.translation_model;
         modelSelect.disabled = true;
         hide(retryBtn);
+        hide(editBtn);
         poller = createPoller(currentJobId, updateUI);
         poller.start();
       } catch (err) {
         showError(err.message);
         retryBtn.disabled    = false;
-        retryBtn.textContent = '번역 재시도';
+        retryBtn.textContent = prevRetryLabel;
+        if (isKoReview) show(koReviewBadge);
       }
     });
 
@@ -898,6 +953,7 @@
       if (poller) poller.stop();
       currentJobId = null;
       playerOpened = false;
+      koReviewOpened = false;
       if (playerWindow && !playerWindow.closed) playerWindow.close();
       playerWindow = null;
       if (editorWindow && !editorWindow.closed) editorWindow.close();
@@ -906,6 +962,7 @@
       uploadBtn._file       = null;
       uploadBtn._subtitleFile = null;
       modelSelect.disabled  = false;
+      refineKoToggle.disabled = false;
       clearSubtitleFile();
       uploadBtn.disabled    = true;
       show(uploadBtn);
@@ -916,6 +973,7 @@
       hide(openPlayerBtn);
       hide(popupHint);
       hide(progressSec);
+      hide(koReviewBadge);
       hide(reviewBadge);
       hide(editBtn);
       hide(cancelBtn);

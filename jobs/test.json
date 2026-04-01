@@ -1,8 +1,0 @@
-{
-  "status": "error",
-  "input_path": "/tmp/x.mp4",
-  "message": "❌ 서버 재시작으로 인코딩 중 작업이 중단되었으며 원본 파일도 유실되었습니다.",
-  "progress": 82,
-  "phase": "encode",
-  "subphase": "encoding"
-}

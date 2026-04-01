@@ -81,10 +81,16 @@ subtitle/
 │   ├── transcription.py   # Whisper 음성인식
 │   ├── translation.py     # Claude/Gemini 번역·검토·재번역 (모든 출력에 줄 분할 정책 적용)
 │   └── encoding.py        # ffmpeg 자막 번인
-├── shared.js              # 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼)
-├── index.html             # 메인 페이지
-├── player.html            # 팝업 플레이어
-├── editor.html            # 팝업 에디터
+├── web/
+│   ├── shared.js          # 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼)
+│   ├── index.html         # 메인 페이지
+│   ├── player.html        # 팝업 플레이어
+│   └── editor.html        # 팝업 에디터
+├── runtime/               # 로컬 런타임 데이터 (gitignored)
+│   ├── jobs/              # job 상태 JSON 파일
+│   ├── uploads/           # 임시 파일 (원본 영상, SRT)
+│   └── outputs/           # 완성 영상
+├── samples/               # 로컬 샘플 영상/SRT (gitignored)
 ├── tests/                 # 앱 단위·통합 테스트
 ├── pyproject.toml         # pytest 설정 (testpaths = tests)
 ├── 설치.bat / 실행.bat     # Windows 원클릭 설치·실행
@@ -94,11 +100,9 @@ subtitle/
 ## 테스트
 
 ```bash
-pytest          # tests/ 기본 실행 (68개, tada 제외)
+pytest          # tests/ 기본 실행
 pytest -v       # 상세 출력
 ```
-
-TADA 모델 테스트(`tada_test.py`, `tada/`)는 별도 환경이 필요하며 기본 실행에서 제외됩니다.
 
 ## 설정
 

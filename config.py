@@ -7,13 +7,35 @@ load_dotenv()
 
 # ── 경로 ──────────────────────────────────────────────────────────────────────
 BASE = Path(__file__).parent.resolve()
-UPLOADS = BASE / "uploads"
-OUTPUTS = BASE / "outputs"
-JOBS_DIR = BASE / "jobs"
+WEB_DIR = BASE / "web"
+RUNTIME_DIR = BASE / "runtime"
 
-UPLOADS.mkdir(exist_ok=True)
-OUTPUTS.mkdir(exist_ok=True)
-JOBS_DIR.mkdir(exist_ok=True)
+
+def _prepare_runtime_subdir(base_dir: Path, runtime_dir: Path, name: str) -> Path:
+    runtime_dir.mkdir(exist_ok=True)
+    legacy = base_dir / name
+    target = runtime_dir / name
+
+    if legacy.exists():
+        if target.exists():
+            for child in legacy.iterdir():
+                dest = target / child.name
+                if not dest.exists():
+                    child.replace(dest)
+            try:
+                legacy.rmdir()
+            except OSError:
+                pass
+        else:
+            legacy.replace(target)
+
+    target.mkdir(exist_ok=True)
+    return target
+
+
+UPLOADS = _prepare_runtime_subdir(BASE, RUNTIME_DIR, "uploads")
+OUTPUTS = _prepare_runtime_subdir(BASE, RUNTIME_DIR, "outputs")
+JOBS_DIR = _prepare_runtime_subdir(BASE, RUNTIME_DIR, "jobs")
 
 # ── API ───────────────────────────────────────────────────────────────────────
 DEFAULT_TRANSLATION_MODEL = os.environ.get("DEFAULT_TRANSLATION_MODEL", "claude")

@@ -7,7 +7,7 @@ _lock = threading.RLock()
 
 
 def save_job(job_id: str):
-    """메모리 → 디스크 저장 (jobs/{job_id}.json) — 원자적 쓰기."""
+    """메모리 → 디스크 저장 (runtime/jobs/{job_id}.json) — 원자적 쓰기."""
     with _lock:
         job = jobs.get(job_id)
         if not job:
@@ -101,6 +101,33 @@ def restore_jobs():
                 with _lock:
                     jobs[job_id] = job
                 save_job(job_id)
+        elif status == "ready_to_review_ko":
+            input_ok = job.get("input_path") and Path(job["input_path"]).exists()
+            ko_srt_ok = (UPLOADS / f"{job_id}.srt").exists()
+            if input_ok and ko_srt_ok:
+                with _lock:
+                    jobs[job_id] = job
+            else:
+                job.update({"status": "error", "message": "❌ 복원에 필요한 파일이 부족합니다."})
+                with _lock:
+                    jobs[job_id] = job
+                save_job(job_id)
+        elif status == "refining_ko":
+            input_ok = job.get("input_path") and Path(job["input_path"]).exists()
+            ko_srt_ok = (UPLOADS / f"{job_id}.srt").exists()
+            if input_ok and ko_srt_ok:
+                job.update({
+                    "status": "ready_to_translate",
+                    "message": "❌ 서버 재시작으로 한국어 다듬기 중 작업이 중단되었습니다. 번역을 재시도하세요.",
+                    "progress": 30,
+                    "phase": "translate",
+                    "subphase": "failed",
+                })
+            else:
+                job.update({"status": "error", "message": "❌ 서버 재시작으로 작업이 중단되었으며 파일이 유실되었습니다."})
+            with _lock:
+                jobs[job_id] = job
+            save_job(job_id)
         elif status in ("queued", "transcribing", "translating", "reviewing", "encoding"):
             input_path = job.get("input_path")
             has_input = input_path and Path(input_path).exists()
@@ -147,6 +174,7 @@ def cleanup_job_files(
         targets.append(UPLOADS / f"{job_id}.srt")
     if not keep_en_srt:
         targets.append(UPLOADS / f"{job_id}_en.srt")
+    targets.append(UPLOADS / f"{job_id}_ko_raw.srt")
 
     for p in targets:
         try:
@@ -203,14 +231,14 @@ def cleanup_stale():
                 log.info("복원 불가 job 메타데이터 삭제: %s", job_id)
                 p.unlink(missing_ok=True)
 
-    # 3. uploads/ orphan 파일 정리 (어떤 job에도 속하지 않는 파일)
+    # 3. runtime/uploads/ orphan 파일 정리 (어떤 job에도 속하지 않는 파일)
     with _lock:
         known_ids = set(jobs.keys())
     for p in UPLOADS.iterdir():
         if not p.is_file():
             continue
         # 파일명에서 job_id 추출 (job_id.ext 또는 job_id_en.srt)
-        stem = p.stem.removesuffix("_en")
+        stem = p.stem.removesuffix("_en").removesuffix("_ko_raw")
         if stem in known_ids:
             continue  # 활성 job에 속함
         if p.stat().st_mtime < orphan_cutoff:

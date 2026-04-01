@@ -7,6 +7,8 @@
 const STATUS = Object.freeze({
   QUEUED:              'queued',
   TRANSCRIBING:        'transcribing',
+  REFINING_KO:         'refining_ko',
+  READY_TO_REVIEW_KO:  'ready_to_review_ko',
   TRANSLATING:         'translating',
   REVIEWING:           'reviewing',
   READY_TO_TRANSLATE:  'ready_to_translate',
@@ -17,11 +19,13 @@ const STATUS = Object.freeze({
   CANCELLED:           'cancelled',
 });
 
-const TERMINAL = new Set([STATUS.DONE, STATUS.ERROR, STATUS.CANCELLED, STATUS.READY_TO_TRANSLATE]);
+const TERMINAL = new Set([STATUS.DONE, STATUS.ERROR, STATUS.CANCELLED, STATUS.READY_TO_TRANSLATE, STATUS.READY_TO_REVIEW_KO]);
 
 const STATUS_LABELS = Object.freeze({
   [STATUS.QUEUED]:             '대기 중...',
   [STATUS.TRANSCRIBING]:       '음성 인식 중...',
+  [STATUS.REFINING_KO]:        '한국어 자막 다듬는 중...',
+  [STATUS.READY_TO_REVIEW_KO]: '한국어 자막 확인 대기',
   [STATUS.TRANSLATING]:        '번역 중...',
   [STATUS.REVIEWING]:          '번역 품질 검토 중...',
   [STATUS.READY_TO_TRANSLATE]: '번역 실패 — 재시도 가능',
@@ -34,6 +38,8 @@ const STATUS_LABELS = Object.freeze({
 
 const STEP_MAP = Object.freeze({
   [STATUS.TRANSCRIBING]:       'step-transcribe',
+  [STATUS.REFINING_KO]:        'step-translate',
+  [STATUS.READY_TO_REVIEW_KO]: 'step-translate',
   [STATUS.TRANSLATING]:        'step-translate',
   [STATUS.REVIEWING]:          'step-review',
   [STATUS.READY_TO_TRANSLATE]: 'step-translate',

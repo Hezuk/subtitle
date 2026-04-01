@@ -5,6 +5,7 @@ import pytest
 import requests
 
 from services.translation import (
+    _refine_batch,
     _call_gemini,
     _provider_error,
     normalize_translation_model,
@@ -98,6 +99,19 @@ def test_translate_blocks_respects_gemini_batch_size():
 
     assert result == {"1": "gemini:1", "2": "gemini:2", "3": "gemini:3"}
     assert mock_translate.call_count == 2
+
+
+def test_refine_batch_prompt_is_translation_oriented():
+    blocks = [{"idx": "1", "text": "음 그 사람한테 어 말했어요"}]
+
+    with patch("services.translation._call_llm", return_value="[1] 그 사람한테 말했어요") as mock_call:
+        result = _refine_batch(blocks, "claude")
+
+    prompt = mock_call.call_args.args[0]
+    assert "translated into English next" in prompt
+    assert "reduce ambiguity for English translation" in prompt
+    assert "translation-ready Korean suitable for subtitles" in prompt
+    assert result == {"1": "그 사람한테 말했어요"}
 
 
 def test_provider_error_for_gemini_503_is_user_friendly():

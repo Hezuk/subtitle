@@ -434,6 +434,14 @@
       if (data.status === lastStatus) return;
       lastStatus = data.status;
 
+      if (data.status === STATUS.READY_TO_REVIEW_KO) {
+        show(btnEdit);
+        currentSource = 'original';
+        hide(finalSourceBtn);
+        show(sourceRow);
+        setSource('original');
+      }
+
       if (data.status === STATUS.READY_TO_ENCODE || data.status === STATUS.ENCODING) {
         data.status === STATUS.READY_TO_ENCODE ? show(btnEdit) : hide(btnEdit);
       }

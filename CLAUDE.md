@@ -40,16 +40,19 @@ subtitle/
 │   ├── transcription.py     ← Whisper 음성인식 (모델 lazy load)
 │   ├── translation.py       ← Claude 번역/검토/재번역 (모든 출력에 wrap_subtitle 적용)
 │   └── encoding.py          ← ffmpeg 자막 번인
-├── shared.js                ← 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼, 브로드캐스트)
-├── index.html               ← 메인 페이지 (업로드, 상태 폴링, 취소, 다운로드)
-├── player.html              ← 팝업 플레이어 (영상 미리보기 + 자막 오버레이)
-├── editor.html              ← 팝업 에디터 (자막 편집, 재번역, SRT 가져오기/내보내기)
+├── web/
+│   ├── shared.js            ← 프론트엔드 공통 유틸 (상수, 폴링, API 래퍼, 브로드캐스트)
+│   ├── index.html           ← 메인 페이지 (업로드, 상태 폴링, 취소, 다운로드)
+│   ├── player.html          ← 팝업 플레이어 (영상 미리보기 + 자막 오버레이)
+│   └── editor.html          ← 팝업 에디터 (자막 편집, 재번역, SRT 가져오기/내보내기)
 ├── tests/                   ← 앱 단위·통합 테스트 (pytest 기본 실행 대상)
 ├── pyproject.toml           ← pytest 설정 (testpaths = tests)
 ├── 설치.bat / 실행.bat       ← Windows 설치/실행 스크립트
-├── uploads/                 ← 임시 파일 (원본 영상, SRT)
-├── outputs/                 ← 완성 영상 (영구 보관)
-└── jobs/                    ← job 상태 JSON 파일 (서버 재시작 시 복원용)
+├── runtime/
+│   ├── uploads/             ← 임시 파일 (원본 영상, SRT)
+│   ├── outputs/             ← 완성 영상 (영구 보관)
+│   └── jobs/                ← job 상태 JSON 파일 (서버 재시작 시 복원용)
+└── samples/                 ← 로컬 샘플 영상/SRT (gitignored)
 ```
 
 ---
@@ -75,7 +78,7 @@ POST /retry/{job_id}
 
 POST /encode/{job_id}
   → run_encode() [encode_executor, max_workers=1]
-      4. ffmpeg burn-in + -movflags +faststart  → outputs/{job_id}.mp4
+      4. ffmpeg burn-in + -movflags +faststart  → runtime/outputs/{job_id}.mp4
       → status: done
 ```
 
@@ -93,7 +96,7 @@ POST /encode/{job_id}
 
 ### Job persistence (store/jobs.py)
 
-- 메모리 dict + `jobs/{job_id}.json` 디스크 저장 (원자적 쓰기: tempfile → replace)
+- 메모리 dict + `runtime/jobs/{job_id}.json` 디스크 저장 (원자적 쓰기: tempfile → replace)
 - `update_job(job_id, **fields)`: 필드 업데이트 + 디스크 저장을 원자적으로 처리하는 헬퍼
 - `save_job()`: 직접 호출 시 메모리 내용을 임시 파일에 쓴 뒤 replace() (쓰기 도중 파일 손상 없음)
 - `load_job()`: 메모리 → 디스크 순서로 조회
@@ -225,15 +228,15 @@ POST /encode/{job_id}
 - 검증 실패 시 400 + 문제 블록 번호 반환 (최대 5건)
 
 ### 파일 관리
-- 임시 파일: `uploads/{job_id}.*` — 인코딩 성공 또는 취소 시 삭제 (`cleanup_job_files()`)
+- 임시 파일: `runtime/uploads/{job_id}.*` — 인코딩 성공 또는 취소 시 삭제 (`cleanup_job_files()`)
 - 번역 실패 시 한국어 SRT 유지 (`ready_to_translate` → 재시도 가능)
 - 인코딩 실패 시 파일 유지 (자막 수정 후 재시도 가능)
-- 출력 파일: `outputs/{job_id}.mp4` — 영구 보관
-- job 메타데이터: `jobs/{job_id}.json` — 서버 재시작 시 복원용
+- 출력 파일: `runtime/outputs/{job_id}.mp4` — 영구 보관
+- job 메타데이터: `runtime/jobs/{job_id}.json` — 서버 재시작 시 복원용
 - 서버 시작 시 `cleanup_stale()` 실행:
   - `STALE_DAYS` 초과 error/cancelled job 자동 삭제
   - 복원 불가 job 메타데이터 삭제
-  - `ORPHAN_HOURS` 초과 orphan 파일 (job에 속하지 않는 uploads/) 삭제
+  - `ORPHAN_HOURS` 초과 orphan 파일 (job에 속하지 않는 runtime/uploads/) 삭제
 
 ### SRT 파싱 (utils/srt.py → parse_srt)
 - `re.split(r'\n{2,}', content)` 블록 분리 방식 사용
@@ -311,13 +314,12 @@ POST /encode/{job_id}
 ### 실행 방법
 
 ```bash
-pytest          # tests/ 기본 실행 (68개)
+pytest          # tests/ 기본 실행
 pytest -v       # 상세 출력
 pytest tests/test_jobs.py  # 특정 모듈만
 ```
 
 `pyproject.toml`에 `testpaths = ["tests"]` 설정으로 기본 실행 시 앱 테스트만 수집.
-`tada_test.py` 및 `tada/` 내 테스트는 무거운 ML 의존성이 필요하므로 기본 실행에서 제외.
 
 ### 테스트 파일
 
