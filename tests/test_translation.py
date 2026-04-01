@@ -5,6 +5,7 @@ import pytest
 import requests
 
 from services.translation import (
+    _parse_block_response,
     _refine_batch,
     _review_ko_batch,
     _call_gemini,
@@ -126,6 +127,51 @@ def test_review_ko_batch_prompt_is_final_qa_oriented():
     assert "revise it only when needed" in prompt
     assert "smallest safe edit" in prompt
     assert result == {"1": "그분께 말씀드렸어요"}
+
+
+def test_parse_block_response_empty_block_no_content_shift():
+    """빈 텍스트 블록이 다음 블록의 내용을 가져오지 않는지 확인."""
+    blocks = [
+        {"idx": "1", "text": "안녕하세요"},
+        {"idx": "2", "text": "음"},
+        {"idx": "3", "text": "오늘 날씨"},
+        {"idx": "4", "text": "감사합니다"},
+    ]
+    # LLM이 [2]를 빈 텍스트로 출력한 경우
+    response = "[1] Hello\n[2]\n[3] Today's weather\n[4] Thank you"
+    result = _parse_block_response(response, blocks)
+    assert result["1"] == "Hello"
+    assert result["2"] == ""
+    assert result["3"] == "Today's weather"
+    assert result["4"] == "Thank you"
+
+
+def test_parse_block_response_empty_block_with_separator():
+    """--- 구분자가 있는 빈 블록도 올바르게 파싱."""
+    blocks = [
+        {"idx": "1", "text": "하나"},
+        {"idx": "2", "text": "어"},
+        {"idx": "3", "text": "셋"},
+    ]
+    response = "[1] One\n---\n[2]\n---\n[3] Three"
+    result = _parse_block_response(response, blocks)
+    assert result["1"] == "One"
+    assert result["2"] == ""
+    assert result["3"] == "Three"
+
+
+def test_parse_block_response_skipped_block_falls_back():
+    """LLM이 블록을 완전히 생략하면 원본 텍스트로 폴백."""
+    blocks = [
+        {"idx": "1", "text": "안녕"},
+        {"idx": "2", "text": "음"},
+        {"idx": "3", "text": "날씨"},
+    ]
+    response = "[1] Hello\n[3] Weather"
+    result = _parse_block_response(response, blocks)
+    assert result["1"] == "Hello"
+    assert result["2"] == "음"  # 폴백
+    assert result["3"] == "Weather"
 
 
 def test_provider_error_for_gemini_503_is_user_friendly():

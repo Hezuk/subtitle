@@ -241,7 +241,7 @@ def _parse_block_response(response: str, blocks: list[dict]) -> dict[str, str]:
     result: dict[str, str] = {}
     missed: list[str] = []
     for b in blocks:
-        m = re.search(rf"\[{b['idx']}\]\s*(.*?)(?=\n\[|\Z)", response, re.DOTALL)
+        m = re.search(rf"\[{b['idx']}\][ \t]*(.*?)(?=\n\[|\Z)", response, re.DOTALL)
         if m:
             text = m.group(1).strip()
             text = re.sub(r"\s*---\s*", "", text).strip()
@@ -336,8 +336,8 @@ def _translate_batch(blocks: list[dict], translation_model: str, context: str = 
         "- Fragments are allowed when they sound natural as subtitles; do not force every line into a full sentence\n"
         "- Resolve implied subjects or objects only when necessary for natural English\n\n"
         "Important cautions:\n"
-        "- Remove filler expressions instead of translating them\n"
-        "- Remove interjections such as surprise, hesitation, sighs, and laughter instead of translating them\n"
+        "- When filler words (음, 어, 그, etc.) or interjections (surprise sounds, hesitation, sighs, laughter) appear within a sentence, omit them from the translation\n"
+        "- If a segment contains ONLY fillers or interjections with no meaningful content, keep the [number] marker and output an empty line\n"
         "- Do not leave Korean words untranslated unless they are proper nouns\n\n"
         "Segments:\n\n"
         f"{texts}"
