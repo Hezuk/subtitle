@@ -786,12 +786,7 @@
         content  = blocksToSRT(merged);
         filename = 'subtitle_bilingual.srt';
       }
-      const blob = new Blob([content], { type: 'text/plain; charset=utf-8' });
-      const a    = document.createElement('a');
-      a.href     = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      downloadBlob(content, filename, 'application/x-subrip;charset=utf-8');
     }
 
     // ── 플레이어에서 갱신 요청 ──

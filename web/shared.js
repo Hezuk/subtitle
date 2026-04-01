@@ -158,3 +158,24 @@ function onSubtitleBroadcast(jobId, callback) {
 function broadcastSubtitleUpdated(jobId) {
   try { new BroadcastChannel(`subtitle-${jobId}`).postMessage(MSG.SUBTITLE_UPDATED); } catch {}
 }
+
+// ── 다운로드 헬퍼 ──────────────────────────────────────────────────────────────
+function triggerDownload({ href, filename = '', revokeAfterMs = 1000 }) {
+  const a = document.createElement('a');
+  a.href = href;
+  if (filename) a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // Chrome 계열에서 object URL을 너무 빨리 해제하면 .crdownload 로 남을 수 있다.
+  if (href.startsWith('blob:')) {
+    window.setTimeout(() => URL.revokeObjectURL(href), revokeAfterMs);
+  }
+}
+
+function downloadBlob(content, filename, type = 'application/octet-stream') {
+  const href = URL.createObjectURL(new Blob([content], { type }));
+  triggerDownload({ href, filename });
+}

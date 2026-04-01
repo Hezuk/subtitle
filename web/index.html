@@ -508,13 +508,13 @@
     </div>
 
     <div class="model-picker">
-      <label class="model-picker-label">한국어 자막 다듬기</label>
+      <label class="model-picker-label">Whisper 한국어 자막 다듬기</label>
       <div class="model-picker-row">
         <label class="refine-toggle">
-          <input type="checkbox" id="refine-ko-toggle" checked aria-label="한국어 자막 다듬기" />
-          <span>번역 전 음성인식 오류·필러·단편 문장 자동 수정</span>
+          <input type="checkbox" id="refine-ko-toggle" checked aria-label="Whisper 한국어 자막 다듬기" />
+          <span>번역 전 Whisper 인식 오류·필러·단편 문장 자동 수정</span>
         </label>
-        <div class="model-picker-hint">Whisper 인식 결과의 품질이 낮을 때 효과적입니다. 처리 시간이 다소 증가합니다.</div>
+        <div id="refine-ko-hint" class="model-picker-hint">Whisper 인식 결과의 품질이 낮을 때 효과적입니다. 업로드한 한국어 SRT는 다듬기를 건너뛰고 AI 검토 후 확인 단계로 이동합니다.</div>
       </div>
     </div>
 
@@ -573,6 +573,7 @@
     const modelSelect  = document.getElementById('model-select');
     const whisperModelSelect = document.getElementById('whisper-model-select');
     const refineKoToggle = document.getElementById('refine-ko-toggle');
+    const refineKoHint = document.getElementById('refine-ko-hint');
     const uploadBtn    = document.getElementById('upload-btn');
     const openPlayerBtn= document.getElementById('open-player-btn');
     const progressSec  = document.getElementById('progress-section');
@@ -608,6 +609,10 @@
       uploadBtn.disabled = !hasVideo;
       uploadBtn.textContent = hasSubtitle ? LABELS.START_WITH_SRT : LABELS.START;
       whisperModelSelect.disabled = hasSubtitle;
+      refineKoToggle.disabled = hasSubtitle;
+      refineKoHint.textContent = hasSubtitle
+        ? '업로드한 한국어 SRT는 다듬기를 건너뛰고 AI 검토 후 확인 단계로 이동합니다.'
+        : 'Whisper 인식 결과의 품질이 낮을 때 효과적입니다. 업로드한 한국어 SRT는 다듬기를 건너뛰고 AI 검토 후 확인 단계로 이동합니다.';
     }
 
     function updateArchiveActions() {
@@ -616,10 +621,7 @@
         window.open(`/original/${currentJobId}`, '_blank', 'noopener,noreferrer');
       };
       downloadKoBtn.onclick = () => {
-        const a = document.createElement('a');
-        a.href = `/download_subtitle_ko/${currentJobId}`;
-        a.download = '';
-        a.click();
+        triggerDownload({ href: `/download_subtitle_ko/${currentJobId}` });
       };
     }
 
@@ -823,10 +825,10 @@
 
         const filename = uploadBtn._filename || 'video.mp4';
         downloadBtn.onclick = () => {
-          const a = document.createElement('a');
-          a.href     = `/download/${currentJobId}`;
-          a.download = filename.replace(/\.[^.]+$/, '_english.mp4');
-          a.click();
+          triggerDownload({
+            href: `/download/${currentJobId}`,
+            filename: filename.replace(/\.[^.]+$/, '_english.mp4'),
+          });
         };
       }
 

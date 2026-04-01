@@ -139,8 +139,11 @@ def _get_ko_prep_state(job_id: str, job: dict | None = None) -> tuple[bool, bool
 def _ready_to_translate_state(job_id: str, job: dict | None = None) -> dict:
     job = job or load_job(job_id) or {}
     refine_ko = job.get("refine_ko", True)
+    source_has_ko_subtitle = job.get("source_has_ko_subtitle", False)
     ko_refined, ko_reviewed = _get_ko_prep_state(job_id, job)
 
+    if source_has_ko_subtitle and not ko_reviewed:
+        return {"progress": 45, "phase": "review_ko", "resume_label": "한국어 AI 검토 재시작"}
     if refine_ko and not ko_refined:
         return {"progress": 30, "phase": "refine_ko", "resume_label": "한국어 자막 다듬기 재시작"}
     if refine_ko and ko_refined and not ko_reviewed:
@@ -867,9 +870,14 @@ def run_translate_pipeline(job_id: str):
 
         job = load_job(job_id) or {}
         refine_ko = job.get("refine_ko", True)
+        source_has_ko_subtitle = job.get("source_has_ko_subtitle", False)
         ko_refined, ko_reviewed = _get_ko_prep_state(job_id, job)
 
-        if refine_ko and not ko_refined:
+        if source_has_ko_subtitle and not ko_reviewed:
+            # 업로드한 한국어 SRT는 다듬기를 건너뛰고 AI 검토만 수행
+            _run_review_ko_step(job_id, blocks, total, translation_model,
+                                extra_timings=job.get("timings"))
+        elif refine_ko and not ko_refined:
             # 아직 다듬지 않은 경우 → 다듬기 + AI 검토 후 ready_to_review_ko에서 대기
             _run_ko_prep_steps(job_id, blocks, total, translation_model,
                                extra_timings=job.get("timings"))
