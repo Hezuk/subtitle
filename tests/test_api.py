@@ -201,6 +201,54 @@ def test_retry_translate_can_switch_model(client, tmp_path):
     mock_exec.submit.assert_called_once()
 
 
+def test_retry_translate_marks_ko_review_restart_when_needed(client, tmp_path):
+    from store.jobs import jobs
+
+    jobs["job1"] = {
+        "status": "ready_to_translate",
+        "translation_model": "gemini",
+        "refine_ko": True,
+        "ko_refined": True,
+        "ko_reviewed": False,
+    }
+    (tmp_path / "job1.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\n안녕\n", encoding="utf-8")
+
+    with patch("main.UPLOADS", tmp_path), \
+         patch("main.pipeline_executor") as mock_exec, \
+         patch("main.save_job"):
+        mock_exec.submit = MagicMock()
+        r = client.post("/retry/job1")
+
+    assert r.status_code == 200
+    assert jobs["job1"]["status"] == "queued"
+    assert jobs["job1"]["phase"] == "review_ko"
+    assert "한국어 AI 검토 재시작" in jobs["job1"]["message"]
+    mock_exec.submit.assert_called_once()
+
+
+def test_run_translate_pipeline_runs_ko_review_when_refined_not_reviewed(tmp_path):
+    from store.jobs import jobs
+    from main import run_translate_pipeline
+
+    jobs["job1"] = {
+        "status": "ready_to_translate",
+        "translation_model": "claude",
+        "refine_ko": True,
+        "ko_refined": True,
+        "ko_reviewed": False,
+        "timings": {"transcribe": "3초", "refine_ko": "2초"},
+    }
+    (tmp_path / "job1.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\n안녕\n", encoding="utf-8")
+
+    with patch("main.UPLOADS", tmp_path), \
+         patch("main._run_review_ko_step") as mock_review_ko, \
+         patch("main._run_translation_steps") as mock_translate:
+        run_translate_pipeline("job1")
+
+    mock_review_ko.assert_called_once()
+    mock_translate.assert_not_called()
+
+
 # ── Subtitles CRUD ───────────────────────────────────────────────────────────
 
 def test_get_subtitles_not_found(client):

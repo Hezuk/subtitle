@@ -8,6 +8,7 @@ const STATUS = Object.freeze({
   QUEUED:              'queued',
   TRANSCRIBING:        'transcribing',
   REFINING_KO:         'refining_ko',
+  REVIEWING_KO:        'reviewing_ko',
   READY_TO_REVIEW_KO:  'ready_to_review_ko',
   TRANSLATING:         'translating',
   REVIEWING:           'reviewing',
@@ -25,6 +26,7 @@ const STATUS_LABELS = Object.freeze({
   [STATUS.QUEUED]:             '대기 중...',
   [STATUS.TRANSCRIBING]:       '음성 인식 중...',
   [STATUS.REFINING_KO]:        '한국어 자막 다듬는 중...',
+  [STATUS.REVIEWING_KO]:       '한국어 자막 AI 검토 중...',
   [STATUS.READY_TO_REVIEW_KO]: '한국어 자막 확인 대기',
   [STATUS.TRANSLATING]:        '번역 중...',
   [STATUS.REVIEWING]:          '번역 품질 검토 중...',
@@ -39,6 +41,7 @@ const STATUS_LABELS = Object.freeze({
 const STEP_MAP = Object.freeze({
   [STATUS.TRANSCRIBING]:       'step-transcribe',
   [STATUS.REFINING_KO]:        'step-translate',
+  [STATUS.REVIEWING_KO]:       'step-translate',
   [STATUS.READY_TO_REVIEW_KO]: 'step-translate',
   [STATUS.TRANSLATING]:        'step-translate',
   [STATUS.REVIEWING]:          'step-review',

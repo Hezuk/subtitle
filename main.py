@@ -28,6 +28,7 @@ from services.translation import (
     normalize_translation_model,
     refine_blocks,
     retranslate_block,
+    review_ko_blocks,
     review_blocks,
     translate_blocks,
 )
@@ -114,6 +115,39 @@ def _get_job_whisper_model(job_id: str) -> str:
         return DEFAULT_WHISPER_MODEL
 
 
+def _get_ko_prep_state(job_id: str, job: dict | None = None) -> tuple[bool, bool]:
+    job = job or load_job(job_id) or {}
+    raw_srt_path = UPLOADS / f"{job_id}_ko_raw.srt"
+
+    ko_refined = job.get("ko_refined")
+    if ko_refined is None:
+        ko_refined = raw_srt_path.exists()
+
+    ko_reviewed = job.get("ko_reviewed")
+    if ko_reviewed is None:
+        ko_reviewed = job.get("status") in (
+            "ready_to_review_ko",
+            "ready_to_translate",
+            "ready_to_encode",
+            "encoding",
+            "done",
+        )
+
+    return bool(ko_refined), bool(ko_reviewed)
+
+
+def _ready_to_translate_state(job_id: str, job: dict | None = None) -> dict:
+    job = job or load_job(job_id) or {}
+    refine_ko = job.get("refine_ko", True)
+    ko_refined, ko_reviewed = _get_ko_prep_state(job_id, job)
+
+    if refine_ko and not ko_refined:
+        return {"progress": 30, "phase": "refine_ko", "resume_label": "한국어 자막 다듬기 재시작"}
+    if refine_ko and ko_refined and not ko_reviewed:
+        return {"progress": 45, "phase": "review_ko", "resume_label": "한국어 AI 검토 재시작"}
+    return {"progress": 30, "phase": "translate", "resume_label": "번역 재시도"}
+
+
 async def _save_upload_file(upload: UploadFile, dest: Path, max_bytes: int | None = None):
     written = 0
     async with aiofiles.open(dest, "wb") as f:
@@ -191,6 +225,8 @@ async def upload(
             "translation_model": translation_model,
             "whisper_model": whisper_model,
             "refine_ko": refine_ko,
+            "ko_refined": False,
+            "ko_reviewed": False,
             "progress": 30 if source_has_ko_subtitle else 0,
             "source_has_ko_subtitle": source_has_ko_subtitle,
             "created_at": time.time(),
@@ -370,16 +406,13 @@ async def retry_translate(job_id: str, payload: dict | None = Body(default=None)
     payload = payload or {}
     translation_model = _validate_translation_model(payload.get("translation_model") or job.get("translation_model"))
     model_label = MODEL_LABELS[translation_model]
-    queue_msg = (
-        f"대기 중... (번역 시작: {model_label})"
-        if prev_status == "ready_to_review_ko"
-        else f"대기 중... (번역 재시도: {model_label})"
-    )
+    resume_state = _ready_to_translate_state(job_id, job)
+    queue_msg = f"대기 중... ({'번역 시작' if prev_status == 'ready_to_review_ko' else resume_state['resume_label']}: {model_label})"
     update_job(job_id,
         status="queued",
         message=queue_msg,
-        progress=45 if prev_status == "ready_to_review_ko" else 30,
-        phase="translate",
+        progress=45 if prev_status == "ready_to_review_ko" else resume_state["progress"],
+        phase="translate" if prev_status == "ready_to_review_ko" else resume_state["phase"],
         subphase="queued",
         translation_model=translation_model,
         error_reason=None,
@@ -509,10 +542,10 @@ def _error_fields(err: SubtitleError | Exception) -> dict:
     }
 
 
-# ── Korean refine step (한국어 자막 다듬기 → ready_to_review_ko) ──────────────
+# ── Korean refine/review steps (한국어 자막 다듬기 + AI 검토) ──────────────────
 def _run_refine_step(job_id: str, blocks: list[dict], total: int, translation_model: str,
                      extra_timings: dict | None = None):
-    """한국어 자막 다듬기 단계만 수행. 완료 후 ready_to_review_ko 상태로 전환."""
+    """한국어 자막 다듬기 단계만 수행. 완료된 블록과 timings를 반환."""
     model_label = MODEL_LABELS[translation_model]
     srt_path = UPLOADS / f"{job_id}.srt"
     raw_srt_path = UPLOADS / f"{job_id}_ko_raw.srt"
@@ -542,18 +575,63 @@ def _run_refine_step(job_id: str, blocks: list[dict], total: int, translation_mo
     refine_elapsed = fmt_elapsed(time.time() - t_refine)
     timings = {**(extra_timings or {}), "refine_ko": refine_elapsed}
     update_job(job_id,
-        status="ready_to_review_ko",
-        message="✏️ 한국어 자막 다듬기 완료! 자막을 확인한 후 번역을 시작하세요.",
-        progress=45,
+        message=f"✏️ 한국어 자막 다듬기 완료 ({total}개, {model_label}) | {refine_elapsed}",
+        progress=40,
         phase="refine_ko",
+        subphase="done",
+        timings=timings,
+        ko_refined=True,
+        ko_reviewed=False,
+    )
+    return refined_blocks, timings
+
+
+def _run_review_ko_step(job_id: str, blocks: list[dict], total: int, translation_model: str,
+                        extra_timings: dict | None = None):
+    """다듬어진 한국어 자막을 AI로 검토한 뒤 사용자 확인 단계로 전환."""
+    model_label = MODEL_LABELS[translation_model]
+    srt_path = UPLOADS / f"{job_id}.srt"
+
+    _check_cancel(job_id)
+    t_review = time.time()
+    update_job(job_id,
+        status="reviewing_ko",
+        message=f"🤖 {total}개 한국어 자막 AI 검토 중... ({model_label})",
+        progress=42,
+        phase="review_ko",
+        subphase="reviewing",
+        stage_start=t_review,
+    )
+
+    reviewed = review_ko_blocks(blocks, translation_model)
+    _check_cancel(job_id)
+
+    reviewed_blocks = [{**b, "text": reviewed.get(b["idx"], b["text"])} for b in blocks]
+    save_blocks(srt_path, reviewed_blocks)
+
+    review_elapsed = fmt_elapsed(time.time() - t_review)
+    timings = {**(extra_timings or {}), "review_ko": review_elapsed}
+    update_job(job_id,
+        status="ready_to_review_ko",
+        message="🤖 한국어 자막 AI 검토 완료! 자막을 확인한 후 번역을 시작하세요.",
+        progress=45,
+        phase="review_ko",
         subphase="waiting",
         timings=timings,
+        ko_refined=True,
+        ko_reviewed=True,
         error_reason=None,
         error_detail=None,
         next_action=None,
         retryable=None,
         error_code=None,
     )
+
+
+def _run_ko_prep_steps(job_id: str, blocks: list[dict], total: int, translation_model: str,
+                       extra_timings: dict | None = None):
+    refined_blocks, timings = _run_refine_step(job_id, blocks, total, translation_model, extra_timings=extra_timings)
+    _run_review_ko_step(job_id, refined_blocks, total, translation_model, extra_timings=timings)
 
 
 # ── Translation steps (번역+검토 로직) ────────────────────────────────────────
@@ -705,8 +783,8 @@ def run_pipeline(job_id: str, input_path: str):
 
         refine_ko = load_job(job_id).get("refine_ko", True)
         if refine_ko:
-            _run_refine_step(job_id, blocks, total, translation_model,
-                             extra_timings={"transcribe": transcribe_elapsed})
+            _run_ko_prep_steps(job_id, blocks, total, translation_model,
+                               extra_timings={"transcribe": transcribe_elapsed})
         else:
             _run_translation_steps(job_id, blocks, total, en_srt_path,
                                    translation_model=translation_model,
@@ -720,10 +798,11 @@ def run_pipeline(job_id: str, input_path: str):
         if srt_path.exists():
             # 한국어 자막이 이미 생성된 상태 → 번역만 재시도 가능
             error_fields = _error_fields(e)
+            resume_state = _ready_to_translate_state(job_id)
             update_job(job_id,
                 status="ready_to_translate",
-                progress=30,
-                phase="translate",
+                progress=resume_state["progress"],
+                phase=resume_state["phase"],
                 subphase="failed",
                 **error_fields,
             )
@@ -735,10 +814,11 @@ def run_pipeline(job_id: str, input_path: str):
         log.error("job=%s 파이프라인 예기치 않은 오류: %s", job_id, e, exc_info=True)
         if srt_path.exists():
             error_fields = _error_fields(e)
+            resume_state = _ready_to_translate_state(job_id)
             update_job(job_id,
                 status="ready_to_translate",
-                progress=30,
-                phase="translate",
+                progress=resume_state["progress"],
+                phase=resume_state["phase"],
                 subphase="failed",
                 **error_fields,
             )
@@ -762,16 +842,18 @@ def run_translate_pipeline(job_id: str):
 
         job = load_job(job_id) or {}
         refine_ko = job.get("refine_ko", True)
-        raw_srt_path = UPLOADS / f"{job_id}_ko_raw.srt"
-        already_refined = raw_srt_path.exists()
+        ko_refined, ko_reviewed = _get_ko_prep_state(job_id, job)
 
-        if refine_ko and not already_refined:
-            # 아직 다듬지 않은 경우 → 다듬기 후 ready_to_review_ko에서 대기
-            _run_refine_step(job_id, blocks, total, translation_model,
-                             extra_timings=job.get("timings"))
+        if refine_ko and not ko_refined:
+            # 아직 다듬지 않은 경우 → 다듬기 + AI 검토 후 ready_to_review_ko에서 대기
+            _run_ko_prep_steps(job_id, blocks, total, translation_model,
+                               extra_timings=job.get("timings"))
+        elif refine_ko and ko_refined and not ko_reviewed:
+            # 다듬기는 완료됐지만 AI 검토가 끝나지 않은 경우 → AI 검토 후 대기
+            _run_review_ko_step(job_id, blocks, total, translation_model,
+                                extra_timings=job.get("timings"))
         else:
-            # 이미 다듬었거나 refine_ko 비활성 → 번역 진행
-            # 기존 timings 유지 (transcribe/refine_ko 등)
+            # AI 검토까지 끝났거나 refine_ko 비활성 → 번역 진행
             _run_translation_steps(job_id, blocks, total, en_srt_path,
                                    translation_model=translation_model,
                                    extra_timings=job.get("timings"))
@@ -782,10 +864,11 @@ def run_translate_pipeline(job_id: str):
     except SubtitleError as e:
         log.error("job=%s 번역 재시도 실패 (%s): %s", job_id, type(e).__name__, e.detail)
         error_fields = _error_fields(e)
+        resume_state = _ready_to_translate_state(job_id)
         update_job(job_id,
             status="ready_to_translate",
-            progress=30,
-            phase="translate",
+            progress=resume_state["progress"],
+            phase=resume_state["phase"],
             subphase="failed",
             **error_fields,
         )
@@ -793,10 +876,11 @@ def run_translate_pipeline(job_id: str):
     except Exception as e:
         log.error("job=%s 번역 재시도 예기치 않은 오류: %s", job_id, e, exc_info=True)
         error_fields = _error_fields(e)
+        resume_state = _ready_to_translate_state(job_id)
         update_job(job_id,
             status="ready_to_translate",
-            progress=30,
-            phase="translate",
+            progress=resume_state["progress"],
+            phase=resume_state["phase"],
             subphase="failed",
             **error_fields,
         )

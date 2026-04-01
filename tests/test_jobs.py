@@ -315,6 +315,39 @@ def test_restore_interrupted_queued(tmp_path):
     jobs.pop(job_id, None)
 
 
+def test_restore_interrupted_reviewing_ko(tmp_path):
+    """reviewing_ko 중단 시 ready_to_translate로 전환하고 AI 검토 재개 정보를 유지."""
+    jobs_dir = tmp_path / "jobs"
+    uploads = tmp_path / "uploads"
+    jobs_dir.mkdir()
+    uploads.mkdir()
+
+    job_id = "interrupted_review_ko"
+    input_file = uploads / f"{job_id}.mp4"
+    input_file.write_text("video")
+    (uploads / f"{job_id}.srt").write_text("ko srt")
+
+    _write_job_json(jobs_dir, job_id, {
+        "status": "reviewing_ko",
+        "input_path": str(input_file),
+        "ko_refined": True,
+        "ko_reviewed": False,
+    })
+
+    with patch("store.jobs.JOBS_DIR", jobs_dir), \
+         patch("store.jobs.UPLOADS", uploads):
+        jobs.pop(job_id, None)
+        restore_jobs()
+
+    j = jobs[job_id]
+    assert j["status"] == "ready_to_translate"
+    assert j["phase"] == "review_ko"
+    assert j["ko_refined"] is True
+    assert j["ko_reviewed"] is False
+    assert "AI 검토" in j["message"]
+    jobs.pop(job_id, None)
+
+
 # ── 동시성 테스트 ─────────────────────────────────────────────────────────
 
 

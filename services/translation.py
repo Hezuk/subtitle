@@ -574,3 +574,72 @@ def refine_blocks(blocks: list[dict], translation_model: str) -> dict[str, str]:
         prev_blocks = batch
     log.info("한국어 다듬기 완료: %d개 블록", len(result))
     return result
+
+
+def _review_ko_batch(blocks: list[dict], translation_model: str, context: str = "") -> dict[str, str]:
+    """단일 배치 한국어 자막 AI 검토."""
+    texts = "\n---\n".join(f"[{b['idx']}] {b['text']}" for b in blocks)
+    context_section = (
+        "Previously reviewed Korean segments (for context and consistency only — do NOT output these):\n"
+        f"{context}\n\n"
+    ) if context else ""
+    prompt = (
+        "You are a Korean subtitle reviewer performing final QA on subtitles that will be translated into English next.\n"
+        "Review each Korean subtitle segment and revise it only when needed so it is precise, natural, and safe for accurate English translation.\n\n"
+        + context_section +
+        "Check and fix:\n"
+        "1. Remaining ASR mistakes, wrong word choices, or garbled phrases\n"
+        "2. Ambiguous or incomplete references that can be safely clarified from nearby context\n"
+        "3. Inconsistent names, titles, numbers, units, key terms, or honorific/politeness level\n"
+        "4. Awkward spacing, punctuation, broken phrasing, or subtitle-unfriendly wording\n"
+        "5. Fragments that are still too unclear for reliable English translation\n\n"
+        "Rules:\n"
+        "- Keep the same [number] marker for every segment\n"
+        "- Return ONLY the segments listed under 'Segments' below — do NOT re-output context segments\n"
+        "- Do not omit, merge, split, reorder, explain, or comment\n"
+        "- Do not translate into English\n"
+        "- Preserve the original meaning, tone, intent, and speaker attitude\n"
+        "- Prefer the smallest safe edit that makes the Korean clear and translation-ready\n"
+        "- If a segment is already good, keep it very close to the current wording\n"
+        "- Do not add information unless it is clearly supported by the source or nearby context\n"
+        "- Output natural Korean suitable for subtitles\n\n"
+        "Segments:\n\n"
+        f"{texts}"
+    )
+    try:
+        response = _call_llm(prompt, translation_model)
+    except Exception as e:
+        if isinstance(e, (ConfigError, ReviewError)):
+            raise
+        log.error("%s 한국어 검토 API 호출 실패: %s", MODEL_LABELS[translation_model], e, exc_info=True)
+        raise _provider_error(e, translation_model, ReviewError) from e
+    raw = _parse_block_response(response, blocks)
+    return {idx: wrap_subtitle(text) for idx, text in raw.items()}
+
+
+def review_ko_blocks(blocks: list[dict], translation_model: str) -> dict[str, str]:
+    """다듬어진 한국어 자막을 최종 검토해 번역하기 좋은 형태로 교정."""
+    translation_model = normalize_translation_model(translation_model)
+    batch_size = _get_review_batch_size(translation_model)
+    total = len(blocks)
+    log.info("%s 한국어 검토 시작: %d개 블록 (배치 크기: %d)", MODEL_LABELS[translation_model], total, batch_size)
+    result: dict[str, str] = {}
+    prev_blocks: list[dict] = []
+    for i in range(0, total, batch_size):
+        batch = blocks[i:i + batch_size]
+        batch_num = i // batch_size + 1
+        total_batches = (total + batch_size - 1) // batch_size
+        log.info(
+            "%s 한국어 검토 배치 %d/%d (블록 %d~%d)",
+            MODEL_LABELS[translation_model],
+            batch_num,
+            total_batches,
+            i + 1,
+            min(i + batch_size, total),
+        )
+        context = _format_context(result, prev_blocks, _CONTEXT_TAIL) if prev_blocks else ""
+        batch_result = _review_ko_batch(batch, translation_model, context=context)
+        result.update(batch_result)
+        prev_blocks = batch
+    log.info("%s 한국어 검토 완료: %d개 블록", MODEL_LABELS[translation_model], len(result))
+    return result

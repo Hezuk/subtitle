@@ -91,6 +91,8 @@ def restore_jobs():
             input_ok = job.get("input_path") and Path(job["input_path"]).exists()
             ko_srt_ok = (UPLOADS / f"{job_id}.srt").exists()
             if input_ok and ko_srt_ok:
+                job.setdefault("ko_refined", (UPLOADS / f"{job_id}_ko_raw.srt").exists())
+                job.setdefault("ko_reviewed", True)
                 with _lock:
                     jobs[job_id] = job
             else:
@@ -105,6 +107,8 @@ def restore_jobs():
             input_ok = job.get("input_path") and Path(job["input_path"]).exists()
             ko_srt_ok = (UPLOADS / f"{job_id}.srt").exists()
             if input_ok and ko_srt_ok:
+                job.setdefault("ko_refined", True)
+                job.setdefault("ko_reviewed", True)
                 with _lock:
                     jobs[job_id] = job
             else:
@@ -118,10 +122,30 @@ def restore_jobs():
             if input_ok and ko_srt_ok:
                 job.update({
                     "status": "ready_to_translate",
-                    "message": "❌ 서버 재시작으로 한국어 다듬기 중 작업이 중단되었습니다. 번역을 재시도하세요.",
+                    "message": "❌ 서버 재시작으로 한국어 다듬기 중 작업이 중단되었습니다. 번역을 다시 시작하면 한국어 다듬기부터 재개됩니다.",
                     "progress": 30,
-                    "phase": "translate",
+                    "phase": "refine_ko",
                     "subphase": "failed",
+                    "ko_refined": False,
+                    "ko_reviewed": False,
+                })
+            else:
+                job.update({"status": "error", "message": "❌ 서버 재시작으로 작업이 중단되었으며 파일이 유실되었습니다."})
+            with _lock:
+                jobs[job_id] = job
+            save_job(job_id)
+        elif status == "reviewing_ko":
+            input_ok = job.get("input_path") and Path(job["input_path"]).exists()
+            ko_srt_ok = (UPLOADS / f"{job_id}.srt").exists()
+            if input_ok and ko_srt_ok:
+                job.update({
+                    "status": "ready_to_translate",
+                    "message": "❌ 서버 재시작으로 한국어 AI 검토 중 작업이 중단되었습니다. 번역을 다시 시작하면 AI 검토부터 재개됩니다.",
+                    "progress": 45,
+                    "phase": "review_ko",
+                    "subphase": "failed",
+                    "ko_refined": True,
+                    "ko_reviewed": False,
                 })
             else:
                 job.update({"status": "error", "message": "❌ 서버 재시작으로 작업이 중단되었으며 파일이 유실되었습니다."})

@@ -538,7 +538,7 @@
       </div>
     </div>
 
-    <div id="ko-review-badge" class="hidden">한국어 자막을 확인하고 필요하면 편집한 후 번역을 시작하세요</div>
+    <div id="ko-review-badge" class="hidden">AI가 검토한 한국어 자막을 확인하고 필요하면 편집한 후 번역을 시작하세요</div>
     <div id="review-badge" class="hidden">자막을 확인하고 필요하면 편집한 후 번인을 시작하세요</div>
     <button id="edit-btn" class="hidden">자막 편집</button>
     <button id="retry-btn" class="hidden">번역 재시도</button>
@@ -845,7 +845,7 @@
     }
 
     function guessProgress(status) {
-      return { queued: 2, transcribing: 8, refining_ko: 35, ready_to_review_ko: 45, translating: 50, reviewing: 65, ready_to_translate: 30, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
+      return { queued: 2, transcribing: 8, refining_ko: 35, reviewing_ko: 42, ready_to_review_ko: 45, translating: 50, reviewing: 65, ready_to_translate: 30, ready_to_encode: 80, encoding: 85, done: 100 }[status] ?? 0;
     }
 
     // 번역 재시도
